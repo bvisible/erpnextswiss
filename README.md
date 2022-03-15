@@ -29,7 +29,7 @@ ERPNextSwiss is also compatible with Dokos ([https://dokos.io](https://dokos.io)
 ## Installation
 From the frappe-bench folder, execute
 
-    $ bench get-app https://github.com/libracore/erpnextswiss.git
+    $ bench get-app https://github.com/bvisible/erpnextswiss.git
     $ bench install-app erpnextswiss
     
 If you are using a multi-tenant environment, use the following for the installation
