@@ -1,4 +1,4 @@
-# erpnextswiss
+# erpnextswiss V14
 ERPNext application for Switzerland-specific use cases
 
 ERPNext ([https://www.erpnext.org](https://www.erpnext.org)) is a global, leading, cloud based
