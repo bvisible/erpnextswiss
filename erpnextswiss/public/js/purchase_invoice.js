@@ -79,6 +79,31 @@ function scan_invoice_code(frm, default_settings) {
     scan_invoice_txt,
     __('OK')
     )
+    ////
+    setTimeout(() => {
+        cur_dialog.$wrapper.find(".control-input").append(
+            `<span class="link-btn">
+                <a class="btn-open no-decoration" style="position: absolute; right: 5px; top: 25px;" title="${__("Scan")}">
+                    ${frappe.utils.icon("scan", "sm")}
+                </a>
+            </span>`
+        );
+        cur_dialog.$scan_btn = cur_dialog.$wrapper.find(".link-btn");
+        cur_dialog.$scan_btn.toggle(true);
+        const me = cur_dialog.fields_dict.code_scan;
+        cur_dialog.$scan_btn.on("click", "a", () => {
+            new frappe.ui.Scanner({
+                dialog: true,
+                multiple: false,
+                on_scan(data) {
+                    if (data && data.result && data.result.text) {
+                        me.set_value(data.result.text);
+                    }
+                },
+            });
+        });
+    }, 500);
+    ////
 }
 
 function check_scan_input(frm, default_settings, code_scan) {
