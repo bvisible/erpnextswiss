@@ -2,7 +2,7 @@
 # Copyright (c) 2018-2019, libracore (https://www.libracore.com) and contributors
 # For license information, please see license.txt
 
-from frappe.email.queue import send
+#from frappe.email.queue import send #////
 import frappe
 from frappe.utils.background_jobs import enqueue
 from frappe import _
@@ -77,7 +77,7 @@ def send_dynamic_newsletter(newsletter):
                         except:
                             message = message
                         # send mail
-                        send(
+                        frappe.sendmail( #////
                             recipients=recipient.email,
                             sender=newsletter.send_from,
                             subject=subject,
