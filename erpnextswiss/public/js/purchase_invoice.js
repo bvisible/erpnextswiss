@@ -11,6 +11,37 @@ frappe.ui.form.on('Purchase Invoice', {
         if ((frm.doc.docstatus === 1) && (frm.doc.is_proposed === 1)) {
             cur_frm.dashboard.add_comment(__('This document has been transmitted to the bank for payment'), 'blue', true);
         }
+        if(!cur_frm.doc.supplier){
+            let d = new frappe.ui.Dialog({
+                title: 'New Purchase Invoice',
+                fields: [
+                    {
+                        label: 'Scan QR invoice',
+                        fieldname: 'btn_scan_dialog',
+                        fieldtype: 'Button',
+                        click: () => {
+                            check_defaults(frm);
+                            d.hide();
+                        }
+                    },
+                    {
+                        label: 'Supplier',
+                        fieldname: 'supplier',
+                        fieldtype: 'Link',
+                        options: 'Supplier',
+                        reqd: 1
+                    }
+                ],
+                primary_action_label: __('Choose'),
+                primary_action(values) {
+                    //console.log(values.customer);
+                    cur_frm.set_value("supplier",values.supplier);
+                    $('html,body').animate({scrollTop: $('[data-fieldname="scan_barcode"]').offset().top});
+                    d.hide();
+                }
+            });
+            d.show();
+        }
     },
     validate: function(frm) {
         if (frm.doc.payment_type == "ESR") {
@@ -159,6 +190,7 @@ function check_scan_input(frm, default_settings, code_scan) {
     } else {
         // QR Section 
         var lines = code_scan.split("\n");      // separate lines
+        console.log(lines);
         if (lines.length < 28) {
             var invalid_esr_code_line = __("Invalid ESR Code Line or QR-Code");
             frappe.msgprint(invalid_esr_code_line);
@@ -166,12 +198,37 @@ function check_scan_input(frm, default_settings, code_scan) {
             var amount = parseFloat(lines[18]);
             var reference = lines[28].replace("\r","").replace("\n","");
             var participant = lines[3].replace("\r","").replace("\n","");
-            get_data_based_on_esr(frm, participant, reference, amount, default_settings);
+            var supplier_name = lines[5].replace("\r","").replace("\n","");
+            var address = lines[6].replace("\r","").replace("\n","");
+            var address_number = address.replace(/\D/g, "");
+            if(address_number.length > 0){
+                var street_number = address_number;
+                var zip = lines[7].replace(/\D/g, "");
+                var city = lines[7].replace(/[^a-zA-Z]+/g, '');
+                var country = lines[10].replace("\r","").replace("\n","");
+            } else {
+                var street_number = lines[7].replace("\r","").replace("\n","");
+                var zip = lines[8].replace("\r","").replace("\n","");
+                var city = lines[9].replace("\r","").replace("\n","");
+                var country = lines[10].replace("\r","").replace("\n","");
+            }
+            /*
+            console.log("amount: " + amount);
+            console.log("reference: " + reference);
+            console.log("participant: " + participant);
+            console.log("supplier_name: " + supplier_name);
+            console.log("address: " + address);
+            console.log("street_number: " + street_number);
+            console.log("zip: " + zip);
+            console.log("city: " + city);
+            console.log("country: " + country);
+            */
+            get_data_based_on_esr(frm, participant, reference, amount, default_settings, address, street_number, zip, city, country, supplier_name);
         }
     }
 }
 
-function get_data_based_on_esr(frm, participant, reference, amount, default_settings) {
+function get_data_based_on_esr(frm, participant, reference, amount, default_settings, address=null, street_number=null, zip=null, city=null, country=null, supplier_name=null) {
     frappe.call({
         "method": "erpnextswiss.scripts.esr_qr_tools.get_supplier_based_on_esr",
         "args": {
@@ -184,7 +241,7 @@ function get_data_based_on_esr(frm, participant, reference, amount, default_sett
                 if (!more_than_one_supplier) {
                     // exatly one supplier
                     var supplier = response.message.supplier;
-                    show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, []);
+                    show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, [], address=address, street_number=street_number, zip=zip, city=city, country=country, supplier_name=supplier_name);
                 } else {
                     // more than one supplier
                     var _suppliers = response.message.supplier;
@@ -193,17 +250,18 @@ function get_data_based_on_esr(frm, participant, reference, amount, default_sett
                         suppliers.push(_suppliers[i]["supplier_name"] + " // (" + _suppliers[i]["name"] + ")");
                     }
                     suppliers = suppliers.join('\n');
-                    show_esr_detail_dialog(frm, participant, reference, amount, default_settings, false, suppliers);
+                    show_esr_detail_dialog(frm, participant, reference, amount, default_settings, false, suppliers, address=address, street_number=street_number, zip=zip, city=city, country=country, supplier_name=supplier_name);
                 }
             } else {
-                show_esr_detail_dialog(frm, participant, reference, amount, default_settings, false, []);
+                show_esr_detail_dialog(frm, participant, reference, amount, default_settings, false, [], address=address, street_number=street_number, zip=zip, city=city, country=country, supplier_name=supplier_name);
             }
         }
     });
 }
 
-function show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, supplier_list) {
+function show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, supplier_list, address=null, street_number=null, zip=null, city=null, country=null, supplier_name=null) {
     var field_list = [];
+    console.log(supplier);
     if (supplier) {
         if (!cur_frm.doc.supplier||cur_frm.doc.supplier == supplier) {
             var supplier_matched_txt = "<p style='color: green;'>" + __("Supplier matched") + "</p>";
@@ -216,6 +274,61 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
         if (supplier_list.length < 1) {
             var supplier_not_found_txt = "<p style='color: red;'>" + __("No Supplier found! Fetched default Supplier.") + "</p>";
             field_list.push({'fieldname': 'supplier', 'fieldtype': 'Link', 'label': __('Supplier'), 'reqd': 1, 'options': 'Supplier', 'default': default_settings.supplier, 'description': supplier_not_found_txt});
+            field_list.push({'fieldname': 'create_supplier', 'fieldtype': 'HTML', 'options': '<div class="form-group"> <div class="clearfix">  </div> <div class="control-input-wrapper"> <div class="control-input"> <button class="btn btn-default btn-sm btn-attach" id="create_supplier" >Create</button> </div> </div> </div>'});
+
+            setTimeout(() => {
+                cur_dialog.fields_dict.supplier.$input.on("change", function(){
+                    $('[data-fieldname="supplier"] .help-box p').attr("style","color: blue;").html('<p>' + __("Do you want to update the supplier?") + '</p><div class="form-group"> <div class="clearfix">  </div> <div class="control-input-wrapper"> <div class="control-input"> <button class="btn btn-default btn-sm btn-attach" id="update_supplier" >' + __("Update supplier") + '</button> </div> </div> </div>');
+                    $('#update_supplier').on('click', function() {
+                        frappe.db.set_value('Supplier', cur_dialog.fields_dict.supplier.value, 'esr_participation_number', participant)
+                        $('[data-fieldname="supplier"] .help-box p').attr("style","color: green;").text(__("Supplier update !"));
+                    });
+                })
+                $('.modal-body [data-fieldname="supplier"]').on('click','[role="listbox"]', function() {
+                    $('[data-fieldname="supplier"] .help-box p').attr("style","color: blue;").html('<p>' + __("Do you want to update the supplier?") + '</p><div class="form-group"> <div class="clearfix">  </div> <div class="control-input-wrapper"> <div class="control-input"> <button class="btn btn-default btn-sm btn-attach" id="update_supplier" >' + __("Update supplier") + '</button> </div> </div> </div>');
+                    $('#update_supplier').on('click', function() {
+                        frappe.db.set_value('Supplier', cur_dialog.fields_dict.supplier.value, 'esr_participation_number', participant)
+                        $('[data-fieldname="supplier"] .help-box p').attr("style","color: green;").text(__("Supplier update !"));
+                    });
+                });
+            }, 500);
+
+
+            setTimeout(() => {
+                $('#create_supplier').on('click', function() {
+                    console.log("Create supplier");
+                    frappe.call({
+                        method: 'neoffice_theme.events.create_supplier',
+                        args: {
+                            'supplier_name': supplier_name,
+                            'participant': participant,
+                            'default_payment_method': "ESR"
+                        },
+                        callback: function(r) {
+                            console.log("Supplier created");
+                            console.log(r)
+                            frappe.call({
+                                method: 'neoffice_theme.events.create_supplier_address',
+                                args: {
+                                    'supplier_name': supplier_name,
+                                    'address': address,
+                                    'street_number': street_number,
+                                    'city': city,
+                                    'zip_code': zip
+                                },
+                                callback: function(r) {
+                                    console.log("Address created")
+                                    console.log(r)
+                                    frappe.db.set_value('Supplier', supplier_name, 'supplier_primary_address', r.message.name)
+                                    cur_dialog.set_value("supplier", supplier_name)
+                                    $('[data-fieldname="supplier"] .help-box p').attr("style","color: green;").text(__("Supplier create !"));
+                                }
+                            });
+                        }
+                    });
+                });
+            }, 200);
+
         } else {
             var multiple_supplier_txt = "<p style='color: orange;'>" + __("Multiple Supplier found, please choose one!") + "</p>";
             field_list.push({'fieldname': 'supplier', 'fieldtype': 'Select', 'label': __('Supplier'), 'reqd': 1, 'options': supplier_list, 'description': multiple_supplier_txt});
@@ -240,13 +353,21 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
     } else {
         field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 1, 'default': parseFloat(amount)});
         field_list.push({'fieldname': 'default_item', 'fieldtype': 'Link', 'options': 'Item', 'label': __('Default Item'), 'default': default_settings.default_item});
+
+        frappe.db.get_value("Supplier", supplier_name, "product_default",(r) => {
+            if(r.product_default){
+                setTimeout(() => {
+                    cur_dialog.set_value("default_item", r.product_default);
+                }, 200);
+            }
+        });
     }
-    
-    field_list.push({'fieldname': 'tax_rate', 'fieldtype': 'Float', 'label': __('Tax Rate in %'), 'default': default_settings.default_tax_rate});
+
+    //field_list.push({'fieldname': 'tax_rate', 'fieldtype': 'Float', 'label': __('Tax Rate in %'), 'default': default_settings.default_tax_rate});
     field_list.push({'fieldname': 'reference', 'fieldtype': 'Data', 'label': __('ESR Reference'), 'read_only': 1, 'default': reference});
     field_list.push({'fieldname': 'participant', 'fieldtype': 'Data', 'label': __('ESR Participant'), 'read_only': 1, 'default': participant});
     field_list.push({'fieldname': 'cost_center', 'fieldtype': 'Link', 'label': __('Cost Center'), 'options': "Cost Center", 'default': locals[":Company"][frappe.defaults.get_user_default("company")]['cost_center'] });
-    
+
     frappe.prompt(field_list,
     function(values){
         if (supplier_list.length > 0) {
@@ -277,50 +398,69 @@ function fetch_esr_details_to_new_sinv(frm, values) {
             cur_frm.get_field("items").grid.grid_rows[i].remove();
         }
     }
-    cur_frm.refresh_field('items');
-    
-    cur_frm.set_value("supplier", values.supplier);
-    cur_frm.set_value("payment_type", 'ESR');
-    cur_frm.set_value("esr_reference_number", values.reference);
-    
-    var rate = (values.amount / (100 + values.tax_rate)) * 100;
-    
-    var child = cur_frm.add_child('items');
-    frappe.model.set_value(child.doctype, child.name, 'item_code', values.default_item);
-    frappe.model.set_value(child.doctype, child.name, 'qty', 1.000);
-    frappe.model.set_value(child.doctype, child.name, 'rate', rate);
-    cur_frm.refresh_field('items');
-    setTimeout(function(){
-        frappe.model.set_value(child.doctype, child.name, 'rate', rate);
-        frappe.model.set_value(child.doctype, child.name, 'cost_center', values.cost_center);
+    frappe.db.get_value("Supplier", cur_frm.doc.supplier, "tax_category",(r) => {
+
         cur_frm.refresh_field('items');
-    }, 1000);
+    
+        cur_frm.set_value("supplier", values.supplier);
+        cur_frm.set_value("payment_type", 'ESR');
+        cur_frm.set_value("esr_reference_number", values.reference);
+        cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
+        cur_frm.set_value("tax_category", r.tax_category);
+
+        //var rate = (values.amount / (100 + values.tax_rate)) * 100;
+        var rate = values.amount;
+
+        var child = cur_frm.add_child('items');
+        frappe.model.set_value(child.doctype, child.name, 'item_code', values.default_item);
+        frappe.model.set_value(child.doctype, child.name, 'qty', 1.000);
+        //frappe.model.set_value(child.doctype, child.name, 'item_tax_template', "TVA 7.7% Achat revente - pri");
+        frappe.model.set_value(child.doctype, child.name, 'rate', rate);
+        cur_frm.refresh_field('items');
+
+        setTimeout(function(){
+            cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
+            frappe.model.set_value(child.doctype, child.name, 'rate', rate);
+            frappe.model.set_value(child.doctype, child.name, 'cost_center', values.cost_center);
+            //frappe.model.set_value(child.doctype, child.name, 'item_tax_template', "TVA 7.7% Achat revente - pri");
+            cur_frm.refresh_field('items');
+        }, 1000);
+    });
 }
 
 function fetch_esr_details_to_existing_sinv(frm, values) {
-    cur_frm.set_value("supplier", values.supplier);
-    cur_frm.set_value("payment_type", 'ESR');
-    cur_frm.set_value("esr_reference_number", values.reference);
-    
-    if (values.negative_deviation) {
-        cur_frm.set_value("apply_discount_on", 'Grand Total');
-        var discount_amount = values.deviation * -1;
-        cur_frm.set_value("discount_amount", discount_amount);
-    }
-    
-    if (values.positive_deviation) {
-        var rate = (values.deviation / (100 + values.tax_rate)) * 100;
-        var child = cur_frm.add_child('items');
-        frappe.model.set_value(child.doctype, child.name, 'item_code', values.positive_deviation_item);
-        frappe.model.set_value(child.doctype, child.name, 'qty', 1.000);
-        frappe.model.set_value(child.doctype, child.name, 'rate', rate);
-        cur_frm.refresh_field('items');
-        setTimeout(function(){
+    frappe.db.get_value("Supplier", cur_frm.doc.supplier, "tax_category",(r) => {
+        cur_frm.set_value("supplier", values.supplier);
+        cur_frm.set_value("payment_type", 'ESR');
+        cur_frm.set_value("esr_reference_number", values.reference);
+        cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
+        cur_frm.set_value("tax_category", r.tax_category);
+
+        if (values.negative_deviation) {
+            cur_frm.set_value("apply_discount_on", 'Grand Total');
+            var discount_amount = values.deviation * -1;
+            cur_frm.set_value("discount_amount", discount_amount);
+        }
+
+        if (values.positive_deviation) {
+            //var rate = (values.deviation / (100 + values.tax_rate)) * 100;
+            var rate = values.deviation
+
+            var child = cur_frm.add_child('items');
+            frappe.model.set_value(child.doctype, child.name, 'item_code', values.positive_deviation_item);
+            frappe.model.set_value(child.doctype, child.name, 'qty', 1.000);
+            //frappe.model.set_value(child.doctype, child.name, 'item_tax_template', "TVA 7.7% Achat revente - pri");
             frappe.model.set_value(child.doctype, child.name, 'rate', rate);
-            frappe.model.set_value(child.doctype, child.name, 'cost_center', values.cost_center);
             cur_frm.refresh_field('items');
-        }, 1000);
-    }
+            setTimeout(function(){
+                cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
+                frappe.model.set_value(child.doctype, child.name, 'rate', rate);
+                //frappe.model.set_value(child.doctype, child.name, 'item_tax_template', "TVA 7.7% Achat revente - pri");
+                frappe.model.set_value(child.doctype, child.name, 'cost_center', values.cost_center);
+                cur_frm.refresh_field('items');
+            }, 1000);
+        }
+    });
 }
 
 function pull_supplier_defaults(frm) {
