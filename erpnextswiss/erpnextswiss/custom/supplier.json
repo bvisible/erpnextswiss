@@ -300,7 +300,7 @@
    "modified_by": "Administrator",
    "name": "Supplier-default_payment_method",
    "no_copy": 0,
-   "options": "IBAN\nESR\nSEPA",
+   "options": "IBAN\nQRR\nESR\nSEPA",
    "owner": "Administrator",
    "parent": null,
    "parentfield": null,
