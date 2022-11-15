@@ -87,6 +87,8 @@ def create_payment_reminders(company):
                 highest_level = 0
                 total_before_charges = 0
                 currency = None
+                #////
+                reminder_charge = 0
                 for invoice in open_invoices:
                     level = invoice.payment_reminder_level + 1
                     if level > max_level:
@@ -106,13 +108,19 @@ def create_payment_reminders(company):
                     currency = invoice.currency
                     if invoice.contact_email:
                         email = invoice.contact_email
+                    #////
+                    reminder_charge += frappe.get_all("ERPNextSwiss Settings Payment Reminder Charge", 
+                        filters={ 'reminder_level': level },
+                        fields=['reminder_charge'])[0]['reminder_charge']
                 # find reminder charge
-                charge_matches = frappe.get_all("ERPNextSwiss Settings Payment Reminder Charge", 
-                    filters={ 'reminder_level': highest_level },
-                    fields=['reminder_charge'])
-                reminder_charge = 0
-                if charge_matches:
-                    reminder_charge = charge_matches[0]['reminder_charge']
+                #////
+                #charge_matches = frappe.get_all("ERPNextSwiss Settings Payment Reminder Charge", 
+                #    filters={ 'reminder_level': highest_level },
+                #    fields=['reminder_charge'])
+                #reminder_charge = 0
+                #if charge_matches:
+                #    reminder_charge = charge_matches[0]['reminder_charge']
+                #//// add "add_invoices": 1,
                 new_reminder = frappe.get_doc({
                     "doctype": "Payment Reminder",
                     "customer": customer.customer,
@@ -121,6 +129,7 @@ def create_payment_reminders(company):
                     "title": "{customer} {year:04d}-{month:02d}-{day:02d}".format(
                         customer=customer.customer, year=now.year, month=now.month, day=now.day),
                     "sales_invoices": invoices,
+                    "add_invoices": 1,
                     'highest_level': highest_level,
                     'total_before_charge': total_before_charges,
                     'reminder_charge': reminder_charge,
