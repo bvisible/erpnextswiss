@@ -56,8 +56,14 @@ frappe.payment_export = {
                             }
 
                             // prepare the xml file for download
-                            download("payments.xml", r.message.content);
-                            
+                            var today = new Date();
+                            var dd = String(today.getDate()).padStart(2, '0');
+                            var mm = String(today.getMonth() + 1).padStart(2, '0'); //January is 0!
+                            var yyyy = today.getFullYear();
+
+                            today = dd + '-' + mm + '-' + yyyy;
+                            download("Payments_" + today + ".xml", r.message.content);
+
                             // remove create file button to prevent double payments
                             page.main.find(".btn-create-file").addClass("hide");
                             page.main.find(".btn-refresh").removeClass("hide");

@@ -201,18 +201,71 @@ function check_scan_input(frm, default_settings, code_scan) {
             var supplier_name = lines[5].replace("\r","").replace("\n","");
             var address = lines[6].replace("\r","").replace("\n","");
             var address_number = address.replace(/\D/g, "");
+            // if address as number
             if(address_number.length > 0){
                 var street_number = address_number;
                 var zip = lines[7].replace(/\D/g, "");
-                var city = lines[7].replace(/[^a-zA-Z]+/g, '');
-                var country = lines[10].replace("\r","").replace("\n","");
+                var zip_number = zip.replace(/\D/g, "");
+                // if zip is only number
+                if(zip_number == zip){
+                    var city = lines[7].replace(/[^a-zA-Z]+/g, '');
+                    var country = lines[10].replace("\r","").replace("\n","");
+                } else {
+                    zip = zip_number;
+                    var city = zip.replace(/[0-9]/g, '').replace(/\s/g, '');
+                    var country = lines[10].replace("\r","").replace("\n","");
+                }
             } else {
                 var street_number = lines[7].replace("\r","").replace("\n","");
-                var zip = lines[8].replace("\r","").replace("\n","");
-                var city = lines[9].replace("\r","").replace("\n","");
-                var country = lines[10].replace("\r","").replace("\n","");
+                var street_number_check = street_number.replace(/\D/g, "");
+                // if street_number is not zip
+                if(street_number == street_number_check){
+                    var zip = lines[8].replace("\r","").replace("\n","");
+                    var zip_number = zip.replace(/\D/g, "");
+                    // if zip is only number
+                    if(zip_number == zip){
+                        var city = lines[9].replace("\r","").replace("\n","");
+                        var country = lines[10].replace("\r","").replace("\n","");
+                    } else {
+                        zip = zip_number;
+                        var city = zip.replace(/[0-9]/g, '').replace(/\s/g, '');
+                        var country = lines[10].replace("\r","").replace("\n","");
+                    }
+                } else {
+                    var zip = street_number_check;
+                    var city = street_number.replace(/[0-9]/g, '').replace(/\s/g, '');
+                    var country = lines[10].replace("\r","").replace("\n","");
+                    street_number = "";
+                }
             }
-            /*
+
+            function containsOnlyNumbers(str) {
+                return /^\d+$/.test(str);
+            }
+
+            // if street_number is not only number
+            if (containsOnlyNumbers(street_number) == false){
+                street_number = "";
+            }
+
+            // if zip is not only number
+            if (containsOnlyNumbers(zip) == false){
+                zip = 1000;
+                frappe.show_alert({
+                    message:__("The address is not valid. The postcode is replaced by 1000."),
+                    indicator:'red'
+                }, 5);
+            }
+
+            // if zip is not only number
+            if (city == ""){
+                city = "Lausanne";
+                frappe.show_alert({
+                    message:__("The address is not valid. The city is replaced by Lausanne."),
+                    indicator:'red'
+                }, 5);
+            }
+
             console.log("amount: " + amount);
             console.log("reference: " + reference);
             console.log("participant: " + participant);
@@ -222,7 +275,7 @@ function check_scan_input(frm, default_settings, code_scan) {
             console.log("zip: " + zip);
             console.log("city: " + city);
             console.log("country: " + country);
-            */
+
             get_data_based_on_esr(frm, participant, reference, amount, default_settings, address, street_number, zip, city, country, supplier_name);
         }
     }
@@ -302,7 +355,7 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
                         args: {
                             'supplier_name': supplier_name,
                             'participant': participant,
-                            'default_payment_method': "ESR"
+                            'default_payment_method': "QRR"
                         },
                         callback: function(r) {
                             console.log("Supplier created");
