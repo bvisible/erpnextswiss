@@ -391,8 +391,8 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
     if (cur_frm.doc.grand_total > 0) {
         if (cur_frm.doc.grand_total != parseFloat(amount)) {
             var deviation = parseFloat(amount) - cur_frm.doc.grand_total;
-            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 1, 'default': parseFloat(amount)});
-            field_list.push({'fieldname': 'deviation', 'fieldtype': 'Currency', 'label': __('Amount Deviation'), 'read_only': 1, 'default': parseFloat(deviation)});
+            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 0, 'default': parseFloat(amount)});
+            field_list.push({'fieldname': 'deviation', 'fieldtype': 'Currency', 'label': __('Amount Deviation'), 'read_only': 0, 'default': parseFloat(deviation)});
             if (deviation < 0) {
                 field_list.push({'fieldname': 'negative_deviation', 'fieldtype': 'Check', 'label': __('Add negative deviation as discount'), 'default': default_settings.negative_deviation});
             } else {
@@ -401,10 +401,10 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
             }
         } else {
             var esr_amount_matched_txt = "<p style='color: green;'>" + __("ESR / Invoice amount matched") + "</p>";
-            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 1, 'default': parseFloat(amount), 'description': esr_amount_matched_txt});
+            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 0, 'default': parseFloat(amount), 'description': esr_amount_matched_txt});
         }
     } else {
-        field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 1, 'default': parseFloat(amount)});
+        field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 0, 'default': parseFloat(amount)});
         field_list.push({'fieldname': 'default_item', 'fieldtype': 'Link', 'options': 'Item', 'label': __('Default Item'), 'default': default_settings.default_item});
 
         frappe.db.get_value("Supplier", supplier_name, "product_default",(r) => {
@@ -417,6 +417,7 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
     }
 
     //field_list.push({'fieldname': 'tax_rate', 'fieldtype': 'Float', 'label': __('Tax Rate in %'), 'default': default_settings.default_tax_rate});
+    field_list.push({'fieldname': 'posting_date', 'fieldtype': 'Date', 'label': __('Date'), 'read_only': 0, 'default': "Today"});
     field_list.push({'fieldname': 'reference', 'fieldtype': 'Data', 'label': __('ESR Reference'), 'read_only': 1, 'default': reference});
     field_list.push({'fieldname': 'participant', 'fieldtype': 'Data', 'label': __('ESR Participant'), 'read_only': 1, 'default': participant});
     field_list.push({'fieldname': 'cost_center', 'fieldtype': 'Link', 'label': __('Cost Center'), 'options': "Cost Center", 'default': locals[":Company"][frappe.defaults.get_user_default("company")]['cost_center'] });
@@ -460,6 +461,7 @@ function fetch_esr_details_to_new_sinv(frm, values) {
         cur_frm.set_value("esr_reference_number", values.reference);
         cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
         cur_frm.set_value("tax_category", r.tax_category);
+        cur_frm.set_value("posting_date", values.posting_date);
 
         //var rate = (values.amount / (100 + values.tax_rate)) * 100;
         var rate = values.amount;
@@ -488,6 +490,7 @@ function fetch_esr_details_to_existing_sinv(frm, values) {
         cur_frm.set_value("esr_reference_number", values.reference);
         cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
         cur_frm.set_value("tax_category", r.tax_category);
+        cur_frm.set_value("posting_date", values.posting_date);
 
         if (values.negative_deviation) {
             cur_frm.set_value("apply_discount_on", 'Grand Total');
