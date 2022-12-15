@@ -243,8 +243,17 @@ function check_scan_input(frm, default_settings, code_scan) {
                 return /^\d+$/.test(str);
             }
 
+            function containsNumbers(str) {
+                return /\d/.test(str);
+            }
+
             // if street_number is not only number
             if (containsOnlyNumbers(street_number) == false){
+                street_number = "";
+            }
+
+            // if address as number
+            if (containsNumbers(address) == true){
                 street_number = "";
             }
 
@@ -406,14 +415,6 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
     } else {
         field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 0, 'default': parseFloat(amount)});
         field_list.push({'fieldname': 'default_item', 'fieldtype': 'Link', 'options': 'Item', 'label': __('Default Item'), 'default': default_settings.default_item});
-
-        frappe.db.get_value("Supplier", supplier_name, "product_default",(r) => {
-            if(r.product_default){
-                setTimeout(() => {
-                    cur_dialog.set_value("default_item", r.product_default);
-                }, 200);
-            }
-        });
     }
 
     //field_list.push({'fieldname': 'tax_rate', 'fieldtype': 'Float', 'label': __('Tax Rate in %'), 'default': default_settings.default_tax_rate});
@@ -421,6 +422,17 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
     field_list.push({'fieldname': 'reference', 'fieldtype': 'Data', 'label': __('ESR Reference'), 'read_only': 1, 'default': reference});
     field_list.push({'fieldname': 'participant', 'fieldtype': 'Data', 'label': __('ESR Participant'), 'read_only': 1, 'default': participant});
     field_list.push({'fieldname': 'cost_center', 'fieldtype': 'Link', 'label': __('Cost Center'), 'options': "Cost Center", 'default': locals[":Company"][frappe.defaults.get_user_default("company")]['cost_center'] });
+
+    setTimeout(() => {
+        frappe.db.get_value("Supplier", supplier_name, "product_default",(r) => {
+            if(r.product_default){
+                setTimeout(() => {
+                    console.log(r.product_default);
+                    cur_dialog.set_value("default_item", r.product_default);
+                }, 200);
+            }
+        });
+    }, 500);
 
     frappe.prompt(field_list,
     function(values){
