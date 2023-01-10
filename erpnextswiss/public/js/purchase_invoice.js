@@ -358,7 +358,8 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
 
 
             setTimeout(() => {
-                $('#create_supplier').on('click', function() {
+                console.log("Create supplier loaded");
+                $(cur_dialog.$wrapper).on('click','#create_supplier', function() {
                     console.log("Create supplier");
                     frappe.call({
                         method: 'neoffice_theme.events.create_supplier',
@@ -370,6 +371,16 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
                         callback: function(r) {
                             console.log("Supplier created");
                             console.log(r)
+                            if (!address || address === '' || address === null || address === undefined) {
+                                address = __("No address");
+                                frappe.warn(__("No address in the QR"),
+                                    __('The supplier has been created but without an address. Go to the supplier to correct the address.'),
+                                    () => {
+                                    },
+                                    __('OK'),
+                                    true 
+                                )
+                            }
                             frappe.call({
                                 method: 'neoffice_theme.events.create_supplier_address',
                                 args: {
@@ -390,7 +401,7 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
                         }
                     });
                 });
-            }, 200);
+            }, 500);
 
         } else {
             var multiple_supplier_txt = "<p style='color: orange;'>" + __("Multiple Supplier found, please choose one!") + "</p>";
