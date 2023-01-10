@@ -6,6 +6,7 @@ frappe.ui.form.on('Purchase Invoice', {
             });
         }
         if (frm.doc.__islocal) {
+            frm.set_value("set_posting_time", 1);
             pull_supplier_defaults(frm);
         }
         if ((frm.doc.docstatus === 1) && (frm.doc.is_proposed === 1)) {
@@ -473,8 +474,10 @@ function fetch_esr_details_to_new_sinv(frm, values) {
         cur_frm.set_value("esr_reference_number", values.reference);
         cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
         cur_frm.set_value("tax_category", r.tax_category);
-        cur_frm.set_value("posting_date", values.posting_date);
-
+        cur_frm.set_value("set_posting_time", 1);
+        setTimeout(() => {
+            cur_frm.set_value("posting_date", values.posting_date);
+        }, 100);
         //var rate = (values.amount / (100 + values.tax_rate)) * 100;
         var rate = values.amount;
 
