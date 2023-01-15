@@ -6,6 +6,7 @@ frappe.ui.form.on('Purchase Invoice', {
             });
         }
         if (frm.doc.__islocal) {
+            frm.set_value("set_posting_time", 1);
             pull_supplier_defaults(frm);
         }
         if ((frm.doc.docstatus === 1) && (frm.doc.is_proposed === 1)) {
@@ -357,7 +358,8 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
 
 
             setTimeout(() => {
-                $('#create_supplier').on('click', function() {
+                console.log("Create supplier loaded");
+                $(cur_dialog.$wrapper).on('click','#create_supplier', function() {
                     console.log("Create supplier");
                     frappe.call({
                         method: 'neoffice_theme.events.create_supplier',
@@ -369,6 +371,16 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
                         callback: function(r) {
                             console.log("Supplier created");
                             console.log(r)
+                            if (!address || address === '' || address === null || address === undefined) {
+                                address = __("No address");
+                                frappe.warn(__("No address in the QR"),
+                                    __('The supplier has been created but without an address. Go to the supplier to correct the address.'),
+                                    () => {
+                                    },
+                                    __('OK'),
+                                    true 
+                                )
+                            }
                             frappe.call({
                                 method: 'neoffice_theme.events.create_supplier_address',
                                 args: {
@@ -389,7 +401,7 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
                         }
                     });
                 });
-            }, 200);
+            }, 500);
 
         } else {
             var multiple_supplier_txt = "<p style='color: orange;'>" + __("Multiple Supplier found, please choose one!") + "</p>";
@@ -473,8 +485,10 @@ function fetch_esr_details_to_new_sinv(frm, values) {
         cur_frm.set_value("esr_reference_number", values.reference);
         cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
         cur_frm.set_value("tax_category", r.tax_category);
-        cur_frm.set_value("posting_date", values.posting_date);
-
+        cur_frm.set_value("set_posting_time", 1);
+        setTimeout(() => {
+            cur_frm.set_value("posting_date", values.posting_date);
+        }, 100);
         //var rate = (values.amount / (100 + values.tax_rate)) * 100;
         var rate = values.amount;
 
