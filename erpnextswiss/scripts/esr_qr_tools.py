@@ -36,6 +36,30 @@ def get_supplier_based_on_esr(participant):
             'more_than_one_supplier': False
         }
 
+@frappe.whitelist()
+def get_supplier_based_on_iban(participant):
+    participant_to_search = participant.replace("", "%").replace("0", "")
+    supplier = frappe.db.sql("""SELECT `name`, `supplier_name` FROM `tabSupplier` WHERE `iban` LIKE '{participant}'""".format(participant=participant_to_search), as_dict=True)
+    if len(supplier) > 0:
+        if len(supplier) > 1:
+            return {
+                'error': False,
+                'supplier': supplier,
+                'more_than_one_supplier': True
+            }
+        else:
+            return {
+                'error': False,
+                'supplier': supplier[0].name,
+                'more_than_one_supplier': False
+            }
+    else:
+        return {
+            'error': True,
+            'supplier': False,
+            'more_than_one_supplier': False
+        }
+        
 # fetch default_item from settings
 @frappe.whitelist()
 def check_defaults():

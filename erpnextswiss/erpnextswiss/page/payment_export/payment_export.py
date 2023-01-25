@@ -103,6 +103,10 @@ def generate_payment_file(payments):
                 skipped.append(payment)
                 continue
             payment_content += make_line("        </Id>")
+            if payment_record.transaction_type == "IBAN":
+                payment_content += make_line("        <Tp>")
+                payment_content += make_line("          <Prtry>NOA</Prtry>")
+                payment_content += make_line("        </Tp>")
             payment_content += make_line("      </DbtrAcct>")
             if payment_account.bic:
                 # debitor agent (sender) - BIC
@@ -136,6 +140,9 @@ def generate_payment_file(payments):
                 payment_content += make_line("            <Prtry>CH01</Prtry>")
                 payment_content += make_line("          </LclInstrm>")
             if payment_record.transaction_type == "QRR":
+                # proprietary (QRR)
+                payment_content += make_line("          <InstrPrty>NORM</InstrPrty>")
+            if payment_record.transaction_type == "IBAN":
                 # proprietary (QRR)
                 payment_content += make_line("          <InstrPrty>NORM</InstrPrty>")
             payment_content += make_line("        </PmtTpInf>")
@@ -238,6 +245,41 @@ def generate_payment_file(payments):
                 payment_content += make_line("            </CdtrRefInf>")
                 payment_content += make_line("          </Strd>")
                 payment_content += make_line("        </RmtInf>")
+
+            elif payment_record.transaction_type == "IBAN":
+                # IBAN payment
+                # add creditor information
+                payment_content += make_line("        <ChrgBr>DEBT</ChrgBr>")
+                creditor_info = add_creditor_info(payment_record)
+                if creditor_info:
+                    payment_content += creditor_info
+                else:
+                    # no address found, skip entry (not valid)
+                    content += add_invalid_remark( _("{0}: no address (or country) found").format(payment) )
+                    skipped.append(payment)
+                    continue
+
+                if payment_record.bic:
+                    payment_content += make_line("        <CdtrAgt>")
+                    payment_content += make_line("          <FinInstnId>")
+                    payment_content += make_line("            <BIC>" +
+                        payment_record.bic + "</BIC>")
+                    payment_content += make_line("          </FinInstnId>")
+                    payment_content += make_line("        </CdtrAgt>")
+
+                payment_content += make_line("        <CdtrAcct>")
+                payment_content += make_line("          <Id>")
+                if payment_record.iban:
+                    payment_content += make_line("            <IBAN>{0}</IBAN>".format(
+                        payment_record.iban.replace(" ", "") ))
+                else:
+                    # no iban: not valid record, skip
+                    content += add_invalid_remark( _("{0}: no IBAN found").format(payment) )
+                    skipped.append(payment)
+                    continue
+                payment_content += make_line("          </Id>")
+                payment_content += make_line("        </CdtrAcct>")
+
             else:
                 # IBAN or SEPA payment
                 # add creditor information

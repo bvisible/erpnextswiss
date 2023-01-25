@@ -197,6 +197,7 @@ function check_scan_input(frm, default_settings, code_scan) {
             frappe.msgprint(invalid_esr_code_line);
         } else {
             var amount = parseFloat(lines[18]);
+            var qr_type = lines[27].replace("\r","").replace("\n","");
             var reference = lines[28].replace("\r","").replace("\n","");
             var participant = lines[3].replace("\r","").replace("\n","");
             var supplier_name = lines[5].replace("\r","").replace("\n","");
@@ -276,6 +277,17 @@ function check_scan_input(frm, default_settings, code_scan) {
                 }, 5);
             }
 
+            // if qr_type = NON
+            if (qr_type == "NON"){
+                qr_type = "IBAN";
+                frappe.show_alert({
+                    message:__("This invoice is not a QRR."),
+                    indicator:'orange'
+                }, 5);
+            }
+
+
+            console.log("type: " + qr_type);
             console.log("amount: " + amount);
             console.log("reference: " + reference);
             console.log("participant: " + participant);
@@ -286,14 +298,18 @@ function check_scan_input(frm, default_settings, code_scan) {
             console.log("city: " + city);
             console.log("country: " + country);
 
-            get_data_based_on_esr(frm, participant, reference, amount, default_settings, address, street_number, zip, city, country, supplier_name);
+            get_data_based_on_esr(frm, participant, reference, amount, default_settings, address, street_number, zip, city, country, supplier_name, qr_type);
         }
     }
 }
 
-function get_data_based_on_esr(frm, participant, reference, amount, default_settings, address=null, street_number=null, zip=null, city=null, country=null, supplier_name=null) {
+function get_data_based_on_esr(frm, participant, reference, amount, default_settings, address=null, street_number=null, zip=null, city=null, country=null, supplier_name=null, qr_type=null) {
+    let methodCall = "erpnextswiss.scripts.esr_qr_tools.get_supplier_based_on_esr";
+    if(qr_type == "IBAN"){
+        methodCall = "erpnextswiss.scripts.esr_qr_tools.get_supplier_based_on_iban";
+    }
     frappe.call({
-        "method": "erpnextswiss.scripts.esr_qr_tools.get_supplier_based_on_esr",
+        "method": methodCall,
         "args": {
             "participant": participant
         },
@@ -304,7 +320,7 @@ function get_data_based_on_esr(frm, participant, reference, amount, default_sett
                 if (!more_than_one_supplier) {
                     // exatly one supplier
                     var supplier = response.message.supplier;
-                    show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, [], address=address, street_number=street_number, zip=zip, city=city, country=country, supplier_name=supplier_name);
+                    show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, [], address=address, street_number=street_number, zip=zip, city=city, country=country, supplier_name=supplier_name, qr_type=qr_type);
                 } else {
                     // more than one supplier
                     var _suppliers = response.message.supplier;
@@ -313,16 +329,16 @@ function get_data_based_on_esr(frm, participant, reference, amount, default_sett
                         suppliers.push(_suppliers[i]["supplier_name"] + " // (" + _suppliers[i]["name"] + ")");
                     }
                     suppliers = suppliers.join('\n');
-                    show_esr_detail_dialog(frm, participant, reference, amount, default_settings, false, suppliers, address=address, street_number=street_number, zip=zip, city=city, country=country, supplier_name=supplier_name);
+                    show_esr_detail_dialog(frm, participant, reference, amount, default_settings, false, suppliers, address=address, street_number=street_number, zip=zip, city=city, country=country, supplier_name=supplier_name, qr_type=qr_type);
                 }
             } else {
-                show_esr_detail_dialog(frm, participant, reference, amount, default_settings, false, [], address=address, street_number=street_number, zip=zip, city=city, country=country, supplier_name=supplier_name);
+                show_esr_detail_dialog(frm, participant, reference, amount, default_settings, false, [], address=address, street_number=street_number, zip=zip, city=city, country=country, supplier_name=supplier_name, qr_type=qr_type);
             }
         }
     });
 }
 
-function show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, supplier_list, address=null, street_number=null, zip=null, city=null, country=null, supplier_name=null) {
+function show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, supplier_list, address=null, street_number=null, zip=null, city=null, country=null, supplier_name=null, qr_type=null) {
     var field_list = [];
     console.log(supplier);
     if (supplier) {
@@ -366,7 +382,7 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
                         args: {
                             'supplier_name': supplier_name,
                             'participant': participant,
-                            'default_payment_method': "QRR"
+                            'default_payment_method': qr_type
                         },
                         callback: function(r) {
                             console.log("Supplier created");
@@ -425,14 +441,23 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
             field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 0, 'default': parseFloat(amount), 'description': esr_amount_matched_txt});
         }
     } else {
-        field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 0, 'default': parseFloat(amount)});
+        if(qr_type == "IBAN"){
+            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('Amount'), 'read_only': 0, 'default': parseFloat(amount)});
+        } else {
+            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 0, 'default': parseFloat(amount)});
+        }
         field_list.push({'fieldname': 'default_item', 'fieldtype': 'Link', 'options': 'Item', 'label': __('Default Item'), 'default': default_settings.default_item});
     }
 
     //field_list.push({'fieldname': 'tax_rate', 'fieldtype': 'Float', 'label': __('Tax Rate in %'), 'default': default_settings.default_tax_rate});
     field_list.push({'fieldname': 'posting_date', 'fieldtype': 'Date', 'label': __('Date'), 'read_only': 0, 'default': "Today"});
-    field_list.push({'fieldname': 'reference', 'fieldtype': 'Data', 'label': __('ESR Reference'), 'read_only': 1, 'default': reference});
-    field_list.push({'fieldname': 'participant', 'fieldtype': 'Data', 'label': __('ESR Participant'), 'read_only': 1, 'default': participant});
+    if(qr_type == "IBAN"){
+        field_list.push({'fieldname': 'iban', 'fieldtype': 'Data', 'label': __('IBAN'), 'read_only': 1, 'default': participant});
+    } else {
+        field_list.push({'fieldname': 'reference', 'fieldtype': 'Data', 'label': __('ESR Reference'), 'read_only': 1, 'default': reference});
+        field_list.push({'fieldname': 'participant', 'fieldtype': 'Data', 'label': __('ESR Participant'), 'read_only': 1, 'default': participant});
+    }
+
     field_list.push({'fieldname': 'cost_center', 'fieldtype': 'Link', 'label': __('Cost Center'), 'options': "Cost Center", 'default': locals[":Company"][frappe.defaults.get_user_default("company")]['cost_center'] });
 
     setTimeout(() => {
@@ -479,10 +504,15 @@ function fetch_esr_details_to_new_sinv(frm, values) {
     frappe.db.get_value("Supplier", cur_frm.doc.supplier, "tax_category",(r) => {
 
         cur_frm.refresh_field('items');
-    
         cur_frm.set_value("supplier", values.supplier);
-        cur_frm.set_value("payment_type", 'ESR');
-        cur_frm.set_value("esr_reference_number", values.reference);
+        if(values.reference){
+            cur_frm.set_value("payment_type", 'ESR');
+            cur_frm.set_value("esr_reference_number", values.reference);
+        } else {
+            cur_frm.set_value("payment_type", 'IBAN');
+            cur_frm.set_value("iban", values.iban);
+        }
+
         cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
         cur_frm.set_value("tax_category", r.tax_category);
         cur_frm.set_value("set_posting_time", 1);
@@ -512,8 +542,13 @@ function fetch_esr_details_to_new_sinv(frm, values) {
 function fetch_esr_details_to_existing_sinv(frm, values) {
     frappe.db.get_value("Supplier", cur_frm.doc.supplier, "tax_category",(r) => {
         cur_frm.set_value("supplier", values.supplier);
-        cur_frm.set_value("payment_type", 'ESR');
-        cur_frm.set_value("esr_reference_number", values.reference);
+        if(values.reference){
+            cur_frm.set_value("payment_type", 'ESR');
+            cur_frm.set_value("esr_reference_number", values.reference);
+        } else {
+            cur_frm.set_value("payment_type", 'IBAN');
+            cur_frm.set_value("iban", values.iban);
+        }
         cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
         cur_frm.set_value("tax_category", r.tax_category);
         cur_frm.set_value("posting_date", values.posting_date);
