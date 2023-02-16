@@ -145,13 +145,13 @@ def get_invoiceable_entries(from_date=None, to_date=None, customer=None):
             AND (`tabDelivery Note`.`posting_date` >= "{from_date}" AND `tabDelivery Note`.`posting_date` <= "{to_date}")
             AND `tabSales Invoice Item`.`name` IS NULL
                     
-        ORDER BY `date` ASC;
+        ORDER BY `customer_name` ASC, `date` ASC;
     """.format(from_date=from_date, to_date=to_date, invoicing_item=invoicing_item, customer=customer, method=invoicing_method)
     entries = frappe.db.sql(sql_query, as_dict=True)
     return entries
 
 @frappe.whitelist()
-def create_invoice(from_date, to_date, customer):
+def create_invoice(from_date, to_date, customer, company=None):
     # fetch entries
     entries = get_invoiceable_entries(from_date=from_date, to_date=to_date, customer=customer)
     
@@ -168,7 +168,10 @@ def create_invoice(from_date, to_date, customer):
             remarkstring = "{0}: {1}<br>{2}".format(e.date.strftime("%d.%m.%Y"), e.employee_name, e.remarks)
         else:
             remarkstring = "{0}: {1}".format(e.date.strftime("%d.%m.%Y"), e.employee_name)
-
+        
+        # project trace
+        sinv.project = e.project
+        
         item = {
             'item_code': e.item,
             'qty': e.qty,
@@ -180,6 +183,7 @@ def create_invoice(from_date, to_date, customer):
         if e.dt == "Delivery Note":
             item['delivery_note'] = e.reference
             item['dn_detail'] = e.detail
+
         elif e.dt == "Timesheet":
             item['timesheet'] = e.reference
             item['ts_detail'] = e.detail
@@ -188,8 +192,22 @@ def create_invoice(from_date, to_date, customer):
         if item['qty'] > 0:                     # only append items with qty > 0 (otherwise this will cause an error)
             sinv.append('items', item)
     
+    # check currency and debtors account
+    customer_doc = frappe.get_doc("Customer", customer)
+    if customer_doc.default_currency:
+        sinv.currency = customer_doc.default_currency
+    
+    # assume debtors account from first row (#NOTE TO FUTURE SELF: INCLUDE MULTI-COMPANY)
+    if customer_doc.accounts and len(customer_doc.accounts) > 0:
+        if company:
+            for a in customer_doc.accounts:
+                if a.company == company:
+                    sinv.debit_to = a.account
+        else:
+            sinv.debit_to = customer_doc.accounts[0].account
+    
     # add default taxes and charges
-    taxes = find_tax_template()
+    taxes = find_tax_template(customer)
     if taxes:
         sinv.taxes_and_charges = taxes
         taxes_template = frappe.get_doc("Sales Taxes and Charges Template", taxes)
@@ -203,9 +221,19 @@ def create_invoice(from_date, to_date, customer):
     
     return sinv.name
 
-def find_tax_template():
-    default_template = frappe.get_all("Sales Taxes and Charges Template", filters={'is_default': 1}, fields=['name'])
-    if len(default_template) > 0:
-        return default_template[0]['name']
+def find_tax_template(customer):
+    # check if the customer has a specific template
+    customer_doc = frappe.get_doc("Customer", customer)
+    if customer_doc.get("default_taxes_and_charges"):
+        template = customer_doc.get("default_taxes_and_charges")
     else:
-        return None
+        default_template = frappe.get_all("Sales Taxes and Charges Template", 
+            filters={
+                'is_default': 1
+            }, 
+            fields=['name'])
+        if len(default_template) > 0:
+            template = default_template[0]['name']
+        else:
+            template = None
+    return template
