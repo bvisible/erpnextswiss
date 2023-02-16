@@ -506,8 +506,10 @@ function fetch_esr_details_to_new_sinv(frm, values) {
         cur_frm.refresh_field('items');
         cur_frm.set_value("supplier", values.supplier);
         if(values.reference){
-            cur_frm.set_value("payment_type", 'ESR');
+            cur_frm.set_value("payment_type", 'QRR');
             cur_frm.set_value("esr_reference_number", values.reference);
+            //cur_frm.set_value("bic", values.bic);
+            cur_frm.set_value("esr_participation_number", values.participant);
         } else {
             cur_frm.set_value("payment_type", 'IBAN');
             cur_frm.set_value("iban", values.iban);
@@ -543,8 +545,10 @@ function fetch_esr_details_to_existing_sinv(frm, values) {
     frappe.db.get_value("Supplier", cur_frm.doc.supplier, "tax_category",(r) => {
         cur_frm.set_value("supplier", values.supplier);
         if(values.reference){
-            cur_frm.set_value("payment_type", 'ESR');
+            cur_frm.set_value("payment_type", 'QRR');
             cur_frm.set_value("esr_reference_number", values.reference);
+            //cur_frm.set_value("bic", values.reference);
+            cur_frm.set_value("esr_participation_number", values.participant);
         } else {
             cur_frm.set_value("payment_type", 'IBAN');
             cur_frm.set_value("iban", values.iban);
