@@ -543,16 +543,42 @@ def get_unpaid_sales_invoices_by_customer(customer):
     open_sales_invoices = frappe.db.sql(sql_query, as_dict=True)
     return open_sales_invoices   
 
+@frappe.whitelist()
+def get_deductions_or_loss():
+    return frappe.get_value('ERPNextSwiss Settings', None, 'deductions_or_loss')
+
 # create a payment entry
-def create_payment_entry(date, to_account, received_amount, transaction_id, remarks, auto_submit=False):
+def create_payment_entry(date, to_account, received_amount, transaction_id, charges=0.00, remarks=None, auto_submit=False):
     # get default customer
     default_customer = get_default_customer()
+
+    # get customer name from ESR in sales invoice
+    customer_name = frappe.get_value('Sales Invoice', {'qr_ref': transaction_id}, 'customer')
+    customer_invoice = frappe.get_value('Sales Invoice', {'qr_ref': transaction_id}, 'name')
+    customer_invoice_amount = frappe.get_value('Sales Invoice', {'qr_ref': transaction_id}, 'outstanding_amount')
+    company_cost_center = frappe.get_value('Company', {'name': frappe.get_value('Sales Invoice', {'qr_ref': transaction_id}, 'company')}, 'cost_center')
+
+    # get deductions_or_loss form doctype ERPNextSwiss Settings
+    deductions_or_loss = get_deductions_or_loss()
+
+    if not customer_name:
+        customer_name = default_customer
+
+    if customer_name and customer_invoice and customer_invoice_amount == received_amount:
+        auto_submit = True
+
+    if charges is not None and charges > 0:
+        # remove charges to received amount
+        charges = float(charges)
+        received_amount = float(received_amount)
+        received_amount = received_amount - charges
+
     if not frappe.db.exists('Payment Entry', {'reference_no': transaction_id}):
         # create new payment entry
         new_payment_entry = frappe.get_doc({'doctype': 'Payment Entry'})
         new_payment_entry.payment_type = "Receive"
         new_payment_entry.party_type = "Customer";
-        new_payment_entry.party = default_customer
+        new_payment_entry.party = customer_name
         # date is in DD.MM.YYYY
         new_payment_entry.posting_date = date
         new_payment_entry.paid_to = to_account
@@ -561,6 +587,22 @@ def create_payment_entry(date, to_account, received_amount, transaction_id, rema
         new_payment_entry.reference_no = transaction_id
         new_payment_entry.reference_date = date
         new_payment_entry.remarks = remarks
+
+        if customer_invoice is not None and customer_invoice != "":
+            # add Payment Entry Reference entry
+            reference_entry = new_payment_entry.append('references', {})
+            reference_entry.reference_doctype = "Sales Invoice"
+            reference_entry.reference_name = customer_invoice
+            reference_entry.allocated_amount = received_amount + charges
+
+        # add Payment Entry Deduction entry
+        if charges is not None and charges > 0:
+            tax_entry = new_payment_entry.append('deductions', {})
+            tax_entry.account_head = "Payment Entry Deduction"
+            tax_entry.account = deductions_or_loss
+            tax_entry.cost_center = company_cost_center
+            tax_entry.amount = charges
+
         inserted_payment_entry = new_payment_entry.insert()
         if auto_submit:
             new_payment_entry.submit()
@@ -1039,7 +1081,7 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                             address_line = "{0} {1}".format(street, street_number)
                         except:
                             address_line = street
-                            
+
                     except:
                         address_line = ""
                     try:
@@ -1091,8 +1133,8 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                             transaction_reference = unique_reference
                 if credit_debit == "CRDT":
                     inserted_payment_entry = create_payment_entry(date=date, to_account=account, received_amount=amount, 
-                        transaction_id=unique_reference, remarks="ESR: {0}, {1}, {2}, IBAN: {3}".format(
-                        transaction_reference, customer_name, customer_address, customer_iban), 
+                        transaction_id=transaction_reference, charges=charges, remarks="Transaction ID: {0}, {1}, {2}, IBAN: {3}".format(
+                        unique_reference, customer_name, customer_address, customer_iban), 
                         auto_submit=False)
                     if inserted_payment_entry:
                         new_payment_entries.append(inserted_payment_entry.name)
