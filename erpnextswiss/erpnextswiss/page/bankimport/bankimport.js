@@ -46,6 +46,8 @@ frappe.bankimport = {
 			// get format type
 			var format = document.getElementById("format").value;
 			
+			console.log("format: " + format);
+			
 			// read the file 
 			var file = document.getElementById("input_file").files[0];
 			var content = "";
@@ -166,7 +168,10 @@ frappe.bankimport = {
 							opt.value = r.message.banks[i].bank_name;
 						}
 						//opt.setAttribute("importType",r.message.banks[i].filetype);
-						opt.innerHTML = r.message.banks[i].bank_name;
+						//// opt.innerHTML = r.message.banks[i].bank_name;
+						////
+						opt.innerHTML = r.message.banks[i].legacy_ref;
+
 						select.appendChild(opt);
 					}
 					// Build import formats based on doctype "
