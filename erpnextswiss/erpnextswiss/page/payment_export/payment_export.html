@@ -1,24 +1,55 @@
-<div style="margin: 5px; margin-top: 0px;">
-  <p class="text-muted">{%= __("Exports the selected payment entries for execution by file transfer to a bank") %}</p>
+<div class="page-form row" style=" display: block; ">
+  <p id="descPage" class="text-muted">{%= __("Exports the selected payment entries for execution by file transfer to a bank") %}</p>
 
   <h4>{{ __("Payment entries") }}</h4>
   <div class="payment-table">
   
   </div>
-  
-  <h4>{{ __("Create payment file") }}</h4>
-  <div class="section-body">
+
+    <button class="btn btn-sm btn-secondary btn-check-all">{{ __("All") }}</button>
+    <button style="margin-left: 10px;" class="btn btn-sm btn-secondary btn-uncheck-all">{{ __("None") }}</button>
+    <button style="margin-left: 10px;" class="btn btn-sm btn-secondary btn-invert-check">{{ __("Reverse") }}</button>
+    <span class="totaltextAmount hide" style="margin-left: 10px;">{{ __("Total amount selected : ") }} </span><input class="hide" type="number" id="inputTotalamount" value="0" style="width: 100px;background: transparent;border: none;font-weight: 800; pointer-events: none;">
+    <div style="display: block; height: 50px;"></div>
+
+
+  <div id="btn-action" class="section-body hide">
+    <h4>{{ __("Create payment file") }}</h4>
+    <div class="insert-log-messages"></div>
+
+    <table id="recapTable" class="table hide">
+      <thead>
+      <tr>
+        <th></th>
+        <th>{{ __("Payment") }}</th>
+        <th>{{ __("Posting date") }}</th>
+        <th>{{ __("Amount") }}</th>
+        <th>{{ __("Party") }}</th>
+        <th>{{ __("Account") }}</th>
+      </tr>
+      </thead>
+      <tbody class="recapLine">
+
+      </tbody>
+      <tfoot id="recapfooter">
+
+      </tfoot>
+    </table>
+
     <div class="row">
-      <div class="form-column col-sm-4">	    
-        <button type="submit" class="btn btn-sm btn-primary btn-create-file">{{ __("Create") }}</button>
-        <button type="submit" class="btn btn-sm btn-primary btn-refresh hide">{{ __("Refresh") }}</button>
-	  </div>
-	  
+      <div class="form-column col-sm-4">
+        <button type="submit" class="btn btn-md btn-primary btn-create-file">{{ __("Create") }}</button>
+        <!--<button type="submit" class="btn btn-sm btn-primary btn-refresh hide">{{ __("Refresh") }}</button>-->
+        <a href="#" id="btn-download-xml" style="background-color: var(--green-400)!important;" class="btn btn-md btn-primary btn-download-xml hide">{{ __("Download the file") }}</a>
+        <a href="#" id="btn-download-recap" class="btn btn-md btn-default icon-btn btn-download-recap hide" style=" display: inline-flex; "><svg class="icon  icon-sm" style=""> <use class="" href="#icon-printer"></use> </svg></a>
+        <button type="submit" id="btn-valid" class="btn btn-md btn-primary btn-valid hide">{{ __("Confirm the file transfer and validate the payments") }}</button>
+      </div>
+
 	  <div class="form-column col-sm-4">
 	    <div class="creation-log-messages"></div>
 	  </div>
     </div>
   </div>
   
-  <div class="insert-log-messages"></div>
+
 </div>

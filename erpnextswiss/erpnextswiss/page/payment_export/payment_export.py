@@ -12,7 +12,7 @@ import html
 @frappe.whitelist()
 def get_payments():
     payments = frappe.get_list('Payment Entry', 
-        filters={'docstatus': 0, 'payment_type': 'Pay'}, 
+        filters={'docstatus': 0, 'payment_type': 'Pay'},
         fields=['name', 'posting_date', 'paid_amount', 'party', 'paid_from', 'paid_to_account_currency'], 
         order_by='posting_date')
 
@@ -320,7 +320,8 @@ def generate_payment_file(payments):
             transaction_count += 1
             control_sum += payment_record.paid_amount
             content += payment_content
-            payment_record.submit()
+            #////payment_record.submit()
+            payment_record.save()
         # add footer
         content += make_line("  </CstmrCdtTrfInitn>")
         content += make_line("</Document>")

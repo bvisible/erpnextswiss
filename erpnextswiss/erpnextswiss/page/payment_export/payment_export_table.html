@@ -1,22 +1,34 @@
-<table  class="table">
+<table id="tablePayment" class="table">
+    <thead>
     <tr>
         <th></th>
         <th>{{ __("Payment") }}</th>
-        <th>{{ __("Posting date") }}</th>
+        <th class="hide">{{ __("Posting date") }}</th>
         <th>{{ __("Amount") }}</th>
         <th>{{ __("Party") }}</th>
         <th>{{ __("Account") }}</th>
     </tr>
-    {% for payment in payments %}
-    <tr>
-        <td><input type="checkbox" id="chk{{ payment.name }}" name="{{ payment.name }}"></td>
-        <td><a href="/app/payment-entry/{{ payment.name }}">{{ payment.name }}</a></td>
-        <td>{{ payment.posting_date }}</td>
-        <td>{{ payment.paid_to_account_currency }}&nbsp;{{ payment.paid_amount }}</td>
-        <td>{{ payment.party }}</td>
-        <td>{{ payment.paid_from }}</td>
-    </tr>
-    {% endfor %}
+    </thead>
+    <tbody>
+        {% for payment in payments %}
+            <tr>
+                <td><input type="checkbox" class="checkboxPayment" id="chk{{ payment.name }}" name="{{ payment.name }}" data-amount="{{ payment.paid_amount }}"></td>
+                <td><a href="/app/payment-entry/{{ payment.name }}">{{ payment.name }}</a></td>
+                <td class="hide">{{ payment.posting_date }}</td>
+                <td class="paid-amount">{{ payment.paid_to_account_currency }}&nbsp;{{ payment.paid_amount }}<input type="hidden" id="paidAmount" value="{{ payment.paid_amount }}"></td>
+                <td>{{ payment.party }}</td>
+                <td>{{ payment.paid_from }}</td>
+            </tr>
+        {% endfor %}
+    </tbody>
+    <tfoot>
+        <tr>
+            <td></td>
+            <td></td>
+            <!--<td></td>-->
+            <td id="totalAmount">{{ payment.paid_to_account_currency }} <input style="background: transparent;border: none;font-weight: 800; pointer-events: none;" type="number" value="0.00"></td>
+            <td></td>
+            <td></td>
+        </tr>
+    </tfoot>
 </table>
-
-
