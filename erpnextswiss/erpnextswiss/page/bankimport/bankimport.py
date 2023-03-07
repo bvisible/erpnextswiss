@@ -1138,20 +1138,27 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                         except:
                             transaction_reference = unique_reference
                 if credit_debit == "CRDT":
-                    inserted_payment_entry = create_payment_entry(date=date, to_account=account, received_amount=amount, 
-                        transaction_id=transaction_reference, charges=charges, remarks="Transaction ID: {0}, {1}, {2}, IBAN: {3}".format(
-                        unique_reference, customer_name, customer_address, customer_iban), 
-                        auto_submit=False)
+                    # check if payment entry already exists
+                    if not frappe.db.exists('Payment Entry', {'reference_no': transaction_reference}):
+                        # create payment entry
+                        inserted_payment_entry = create_payment_entry(date=date, to_account=account, received_amount=amount, transaction_id=transaction_reference, charges=charges, remarks="Transaction ID: {0}, {1}, {2}, IBAN: {3}".format(unique_reference, customer_name, customer_address, customer_iban), auto_submit=False)
 
-                    frappe.log_error("inserted_payment_entry {0}".format(inserted_payment_entry))
+                        frappe.log_error("inserted_payment_entry {0}".format(inserted_payment_entry))
 
-                    if inserted_payment_entry:
-                        new_payment_entries.append(inserted_payment_entry.name)
-                        return_amounts.append(amount)
-                        return_customer_names.append(customer_name)
-                        return_date.append(date)
-                        return_unique_reference.append(unique_reference)
-                        return_transaction_reference.append(transaction_reference)
+                        if inserted_payment_entry:
+                            new_payment_entries.append(inserted_payment_entry.name)
+                            return_amounts.append(amount)
+                            return_customer_names.append(customer_name)
+                            return_date.append(date)
+                            return_unique_reference.append(unique_reference)
+                            return_transaction_reference.append(transaction_reference)
+                        else:
+                            new_payment_entries.append(0)
+                            return_amounts.append(amount)
+                            return_customer_names.append(customer_name)
+                            return_date.append(date)
+                            return_unique_reference.append(unique_reference)
+                            return_transaction_reference.append(transaction_reference)
                     else:
                         new_payment_entries.append(0)
                         return_amounts.append(amount)
@@ -1159,6 +1166,7 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                         return_date.append(date)
                         return_unique_reference.append(unique_reference)
                         return_transaction_reference.append(transaction_reference)
+
 
             except Exception as e:
                 frappe.msgprint("Parsing error: {0}:{1}".format(six.text_type(transaction), e))
