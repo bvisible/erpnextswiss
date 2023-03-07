@@ -321,7 +321,7 @@ def generate_payment_file(payments):
             control_sum += payment_record.paid_amount
             content += payment_content
             #////payment_record.submit()
-            payment_record.save()
+            #payment_record.save()
         # add footer
         content += make_line("  </CstmrCdtTrfInitn>")
         content += make_line("</Document>")

@@ -86,9 +86,10 @@ frappe.bankimport = {
 								var return_date = r.message.records[3];
 								var return_unique_reference = r.message.records[4];
 								var return_transaction_reference = r.message.records[5];
+								var return_info = r.message.records[6];
 
 								if (r.message) {
-									frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference );
+									frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference, return_info );
 								}
 							}
 						}); 
@@ -111,9 +112,10 @@ frappe.bankimport = {
 								var return_date = r.message.records[3];
 								var return_unique_reference = r.message.records[4];
 								var return_transaction_reference = r.message.records[5];
+								var return_info = r.message.records[6];
 
 								if (r.message) {
-									frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference );
+									frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference, return_info );
 								}
 							}
 						});
@@ -136,11 +138,11 @@ frappe.bankimport = {
 								var return_date = r.message.records[3];
 								var return_unique_reference = r.message.records[4];
 								var return_transaction_reference = r.message.records[5];
+								var return_info = r.message.records[6];
 
 								if (r.message) {
-									frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference );
+									frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference, return_info );
 								}
-
 							}
 						});
 					} else {
@@ -230,7 +232,7 @@ frappe.bankimport = {
 	end_wait: function() {
 		//document.getElementById("waitingScreen").style.display = "none";
 	},
-	render_response: function(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference) {
+	render_response: function(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference, return_info) {
 		// disable waiting gif
 		////frappe.bankimport.end_wait();
 		frappe.dom.unfreeze();
@@ -262,6 +264,7 @@ frappe.bankimport = {
 						$('<td>' + return_customer_names[i] + '</td>').appendTo(trtablenot);
 						$('<td>' + return_unique_reference[i] + '</td>').appendTo(trtablenot);
 						$('<td><a id="' + return_transaction_reference[i] + '">' + return_transaction_reference[i] + '</a></td>').appendTo(trtablenot);
+						$('<td>' + __(return_info[i]) + '</td>').appendTo(trtablenot);
 					$('</tr>').appendTo(trtablenot);
 					$("#payment_not_matched").removeClass("hide");
 					// Get invoice name from QR reference

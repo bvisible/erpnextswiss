@@ -1063,6 +1063,7 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
     return_date = []
     return_unique_reference = []
     return_transaction_reference = []
+    return_info = []
 
     for entry in transaction_entries:
         entry_soup = BeautifulSoup(six.text_type(entry), 'lxml')
@@ -1152,6 +1153,7 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                             return_date.append(date)
                             return_unique_reference.append(unique_reference)
                             return_transaction_reference.append(transaction_reference)
+                            return_info.append("Transaction ID: {0}, {1}, {2}, IBAN: {3}".format(unique_reference, customer_name, customer_address, customer_iban))
                         else:
                             new_payment_entries.append(0)
                             return_amounts.append(amount)
@@ -1159,6 +1161,7 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                             return_date.append(date)
                             return_unique_reference.append(unique_reference)
                             return_transaction_reference.append(transaction_reference)
+                            return_info.append("Transaction ID: {0}, {1}, {2}, IBAN: {3}".format(unique_reference, customer_name, customer_address, customer_iban))
                     else:
                         new_payment_entries.append(0)
                         return_amounts.append(amount)
@@ -1166,11 +1169,11 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                         return_date.append(date)
                         return_unique_reference.append(unique_reference)
                         return_transaction_reference.append(transaction_reference)
-
+                        return_info.append("Refecency of payment already exists.")
 
             except Exception as e:
                 frappe.msgprint("Parsing error: {0}:{1}".format(six.text_type(transaction), e))
                 pass
 
-    return new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference
+    return new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference, return_info
 
