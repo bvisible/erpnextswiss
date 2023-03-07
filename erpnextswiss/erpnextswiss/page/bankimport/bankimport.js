@@ -45,8 +45,8 @@ frappe.bankimport = {
 			var auto_submit = false;
 			// get format type
 			var format = document.getElementById("format").value;
-			
-			console.log("format: " + format);
+
+			//console.log("format: " + format);
 			
 			// read the file 
 			var file = document.getElementById("input_file").files[0];
@@ -57,12 +57,16 @@ frappe.bankimport = {
 				// assign load event to process the file
 				reader.onload = function (event) {
 					// enable waiting gif
-					frappe.bankimport.start_wait();
-					
+					////frappe.bankimport.start_wait();
+					frappe.dom.freeze(__("Please wait while the file is being processed..."));
 					// read file content
-					content = String.fromCharCode.apply(null, Array.prototype.slice.apply(new Uint8Array(event.target.result)));
+					var bytes = new Uint8Array(event.target.result);
+					var content = '';
+					for (var i = 0; i < bytes.length; i++) {
+						content += String.fromCharCode(bytes[i]);
+					}
 					//content = event.target.result;
-					
+
 					if (format == "csv") {
 						// call bankimport method with file content
 						frappe.call({
@@ -75,9 +79,17 @@ frappe.bankimport = {
 								debug : debug
 							},
 							callback: function(r) {
+								var message = r.message.message;
+								var new_payment_entries = r.message.records[0];
+								var return_amounts = r.message.records[1];
+								var return_customer_names = r.message.records[2];
+								var return_date = r.message.records[3];
+								var return_unique_reference = r.message.records[4];
+								var return_transaction_reference = r.message.records[5];
+
 								if (r.message) {
-									frappe.bankimport.render_response(page, r.message);
-								} 
+									frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference );
+								}
 							}
 						}); 
 					} 
@@ -92,9 +104,17 @@ frappe.bankimport = {
 								auto_submit: auto_submit
 							},
 							callback: function(r) {
+								var message = r.message.message;
+								var new_payment_entries = r.message.records[0];
+								var return_amounts = r.message.records[1];
+								var return_customer_names = r.message.records[2];
+								var return_date = r.message.records[3];
+								var return_unique_reference = r.message.records[4];
+								var return_transaction_reference = r.message.records[5];
+
 								if (r.message) {
-									frappe.bankimport.render_response(page, r.message);
-								} 
+									frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference );
+								}
 							}
 						});
 					}
@@ -109,9 +129,18 @@ frappe.bankimport = {
 								auto_submit: auto_submit
 							},
 							callback: function(r) {
+								var message = r.message.message;
+								var new_payment_entries = r.message.records[0];
+								var return_amounts = r.message.records[1];
+								var return_customer_names = r.message.records[2];
+								var return_date = r.message.records[3];
+								var return_unique_reference = r.message.records[4];
+								var return_transaction_reference = r.message.records[5];
+
 								if (r.message) {
-									frappe.bankimport.render_response(page, r.message);
-								} 
+									frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference );
+								}
+
 							}
 						});
 					} else {
@@ -139,13 +168,19 @@ frappe.bankimport = {
 			args: { },
 			callback: function(r) {
 				if (r.message) {
-					var select = document.getElementById("payment_account");
-					for (var i = 0; i < r.message.accounts.length; i++) {
-						var opt = document.createElement("option");
-						opt.value = r.message.accounts[i];
-						opt.innerHTML = r.message.accounts[i];
-						select.appendChild(opt);
-					}
+					setTimeout(function() {
+						var select = document.getElementById("payment_account");
+						var defaultValue = $("#bank").val().toLowerCase();
+						for (var i = 0; i < r.message.accounts.length; i++) {
+							var opt = document.createElement("option");
+							opt.value = r.message.accounts[i];
+							opt.innerHTML = r.message.accounts[i];
+							if (r.message.accounts[i].toLowerCase().indexOf(defaultValue) !== -1) {
+								opt.selected = true;
+							}
+							select.appendChild(opt);
+						}
+					}, 200);
 				}
 			}
 		});
@@ -193,21 +228,59 @@ frappe.bankimport = {
 		//document.getElementById("waitingScreen").style.display = "block";
 	},
 	end_wait: function() {
-		document.getElementById("waitingScreen").style.display = "none";
+		//document.getElementById("waitingScreen").style.display = "none";
 	},
-	render_response: function(page, message) {
+	render_response: function(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference) {
 		// disable waiting gif
-		frappe.bankimport.end_wait();
-		var parent = page.main.find(".insert-log-messages").empty();
-		$('<p>' + __(message.message) + '</p>').appendTo(parent);
-		frappe.msgprint(__(message.message));
-		if (message.records) {
-			for (var i = 0; i < message.records.length; i++) {
-				$('<p><a href="/app/payment-entry/'
-				  + message.records[i] + '">' 
-				  + message.records[i] + '</a></p>').appendTo(parent);
+		////frappe.bankimport.end_wait();
+		frappe.dom.unfreeze();
+		page.main.find(".insert-log-messages").removeClass("hide");
+		var parent = page.main.find(".insert-log-messages #message").empty();
+		var trtable = page.main.find(".insert-log-messages #log_messages").empty();
+		var trtablenot = page.main.find(".insert-log-messages #log_messages_not_imported").empty();
+		var count_new_payment_entries = new_payment_entries.length;
+		var count_payment_not_imported = 0;
+
+		if (new_payment_entries) {
+			for (var i = 0; i < count_new_payment_entries; i++) {
+				if(new_payment_entries[i] != 0) {
+					$('<tr>').appendTo(trtable);
+						$('<td>' + return_date[i] + '</td>').appendTo(trtable);
+						$('<td><a href="/app/payment-entry/'
+							+ new_payment_entries[i] + '">'
+							+ new_payment_entries[i] + '</a></td>').appendTo(trtable);
+						$('<td>' + return_amounts[i] + '</td>').appendTo(trtable);
+						$('<td>' + return_customer_names[i] + '</td>').appendTo(trtable);
+						$('<td>' + return_unique_reference[i] + '</td>').appendTo(trtable);
+						$('<td>' + return_transaction_reference[i] + '</td>').appendTo(trtable);
+					$('</tr>').appendTo(trtable);
+				} else {
+					count_payment_not_imported++;
+					$('<tr>').appendTo(trtablenot);
+						$('<td>' + return_date[i] + '</td>').appendTo(trtablenot);
+						$('<td>' + return_amounts[i] + '</td>').appendTo(trtablenot);
+						$('<td>' + return_customer_names[i] + '</td>').appendTo(trtablenot);
+						$('<td>' + return_unique_reference[i] + '</td>').appendTo(trtablenot);
+						$('<td><a id="' + return_transaction_reference[i] + '">' + return_transaction_reference[i] + '</a></td>').appendTo(trtablenot);
+					$('</tr>').appendTo(trtablenot);
+					$("#payment_not_matched").removeClass("hide");
+					// Get invoice name from QR reference
+					$("#" + return_transaction_reference[i]).click(function() {
+						var transaction_reference = $(this).attr('id');
+						// Open the invoice in a new tab
+						frappe.db.get_value("Sales Invoice", {"qr_ref": return_unique_reference[i]}, "name", function(r) {
+							if(r.name) {
+								window.open("/app/sales-invoice/" + r.name);
+							}
+						});
+					});
+				}
 			}
+			count_new_payment_entries = count_new_payment_entries - count_payment_not_imported;
+
+			$('<div class="alert alert-info" style="font-weight: 600;">' + __("Successfully imported ") + "<strong>" + count_new_payment_entries + "</strong>" + __(" payments and ") + "<strong>" + count_payment_not_imported + "</strong>" + __(" not imported.") + '</div>').appendTo(parent);
 		}
+
 	},
 	change_option: function(id, valueToSelect) {
 		var element = document.getElementById(id);
