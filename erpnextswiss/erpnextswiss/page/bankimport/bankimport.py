@@ -548,15 +548,15 @@ def get_deductions_or_loss():
     return frappe.get_value('ERPNextSwiss Settings', None, 'deductions_or_loss')
 
 # create a payment entry
-def create_payment_entry(date, to_account, received_amount, transaction_id, charges=0.00, remarks=None, auto_submit=False):
+def create_payment_entry(date, to_account, received_amount, transaction_id, transaction_reference, charges=0.00, remarks=None, auto_submit=False):
     # get default customer
     default_customer = get_default_customer()
 
     # get customer name from ESR in sales invoice
-    customer_name = frappe.get_value('Sales Invoice', {'qr_ref': transaction_id}, 'customer')
-    customer_invoice = frappe.get_value('Sales Invoice', {'qr_ref': transaction_id}, 'name')
-    customer_invoice_amount = frappe.get_value('Sales Invoice', {'qr_ref': transaction_id}, 'outstanding_amount')
-    company_cost_center = frappe.get_value('Company', {'name': frappe.get_value('Sales Invoice', {'qr_ref': transaction_id}, 'company')}, 'cost_center')
+    customer_name = frappe.get_value('Sales Invoice', {'qr_ref': transaction_reference}, 'customer')
+    customer_invoice = frappe.get_value('Sales Invoice', {'qr_ref': transaction_reference}, 'name')
+    customer_invoice_amount = frappe.get_value('Sales Invoice', {'qr_ref': transaction_reference}, 'outstanding_amount')
+    company_cost_center = frappe.get_value('Company', {'name': frappe.get_value('Sales Invoice', {'qr_ref': transaction_reference}, 'company')}, 'cost_center')
 
     # get deductions_or_loss form doctype ERPNextSwiss Settings
     deductions_or_loss = get_deductions_or_loss()
@@ -579,21 +579,23 @@ def create_payment_entry(date, to_account, received_amount, transaction_id, char
         new_payment_entry.payment_type = "Receive"
         new_payment_entry.party_type = "Customer"
         new_payment_entry.party = customer_name
-        # date is in DD.MM.YYYY
         new_payment_entry.posting_date = date
         new_payment_entry.paid_to = to_account
         new_payment_entry.received_amount = received_amount
         new_payment_entry.paid_amount = received_amount
         new_payment_entry.reference_no = transaction_id
+        new_payment_entry.esr_reference = transaction_reference
         new_payment_entry.reference_date = date
         new_payment_entry.remarks = remarks
 
-        if customer_invoice is not None and customer_invoice != "":
+        if customer_invoice is not None and customer_invoice != "" and received_amount <= customer_invoice_amount:
             # add Payment Entry Reference entry
             reference_entry = new_payment_entry.append('references', {})
             reference_entry.reference_doctype = "Sales Invoice"
             reference_entry.reference_name = customer_invoice
             reference_entry.allocated_amount = received_amount + charges
+        else:
+            auto_submit = False
 
         # add Payment Entry Deduction entry
         if charges is not None and charges > 0:
@@ -1054,8 +1056,25 @@ def read_camt054(content, bank, account, auto_submit=False):
     new_payment_entries = read_camt_transactions(soup.find_all('ntry'), bank, account, auto_submit)
     message = _("Successfully imported {0} payments.".format(len(new_payment_entries)))
     
-    return { "message": message, "records": new_payment_entries } 
-    
+    return { "message": message, "records": new_payment_entries }
+
+@frappe.whitelist()
+def check_iban_xml(content, ibanSelected):
+    soup = BeautifulSoup(content, 'lxml')
+
+    # general information
+    try:
+        iban = soup.document.bktocstmrdbtcdtntfctn.ntfctn.acct.id.iban.get_text()
+    except:
+        # node not found, probably wrong format
+        return { "message": _("Unable to read structure. Please make sure that you have selected the correct format."), "records": None }
+
+    if iban == ibanSelected:
+        return True
+    else:
+        return False
+
+
 def read_camt_transactions(transaction_entries, bank, account, auto_submit=False):
     new_payment_entries = []
     return_amounts = []
@@ -1140,9 +1159,9 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                             transaction_reference = unique_reference
                 if credit_debit == "CRDT":
                     # check if payment entry already exists
-                    if not frappe.db.exists('Payment Entry', {'reference_no': transaction_reference}):
+                    if not frappe.db.exists('Payment Entry', {'reference_no': unique_reference}):
                         # create payment entry
-                        inserted_payment_entry = create_payment_entry(date=date, to_account=account, received_amount=amount, transaction_id=transaction_reference, charges=charges, remarks="Transaction ID: {0}, {1}, {2}, IBAN: {3}".format(unique_reference, customer_name, customer_address, customer_iban), auto_submit=False)
+                        inserted_payment_entry = create_payment_entry(date=date, to_account=account, received_amount=amount, transaction_id=unique_reference, transaction_reference=transaction_reference, charges=charges, remarks="ESR: {0}, Transaction ID: {1}, {2}, {3}, IBAN: {4}".format(transaction_reference, unique_reference, customer_name, customer_address, customer_iban), auto_submit=False)
 
                         frappe.log_error("inserted_payment_entry {0}".format(inserted_payment_entry))
 
@@ -1153,7 +1172,7 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                             return_date.append(date)
                             return_unique_reference.append(unique_reference)
                             return_transaction_reference.append(transaction_reference)
-                            return_info.append("Transaction ID: {0}, {1}, {2}, IBAN: {3}".format(unique_reference, customer_name, customer_address, customer_iban))
+                            return_info.append("ESR: {0}, Transaction ID: {1}, {2}, {3}, IBAN: {4}".format(transaction_reference, unique_reference, customer_name, customer_address, customer_iban))
                         else:
                             new_payment_entries.append(0)
                             return_amounts.append(amount)
@@ -1161,7 +1180,7 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                             return_date.append(date)
                             return_unique_reference.append(unique_reference)
                             return_transaction_reference.append(transaction_reference)
-                            return_info.append("Transaction ID: {0}, {1}, {2}, IBAN: {3}".format(unique_reference, customer_name, customer_address, customer_iban))
+                            return_info.append("ESR: {0}, Transaction ID: {1}, {2}, {3}, IBAN: {4}".format(transaction_reference, unique_reference, customer_name, customer_address, customer_iban))
                     else:
                         new_payment_entries.append(0)
                         return_amounts.append(amount)

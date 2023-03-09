@@ -67,6 +67,10 @@ frappe.bankimport = {
 					}
 					//content = event.target.result;
 
+					// Get iban selected
+					var ibanSelected = $(cur_page.page).find("#payment_account").val();
+					// Get iban from file
+					
 					if (format == "csv") {
 						// call bankimport method with file content
 						frappe.call({
@@ -97,28 +101,80 @@ frappe.bankimport = {
 					else if (format == "camt054") {
 						// call bankimport method with file content
 						frappe.call({
-							method: 'erpnextswiss.erpnextswiss.page.bankimport.bankimport.read_camt054',
+							method: 'erpnextswiss.erpnextswiss.page.bankimport.bankimport.check_iban_xml',
 							args: {
 								content: content,
-								bank: bank,
-								account: account,
-								auto_submit: auto_submit
+								ibanSelected: ibanSelected,
 							},
 							callback: function(r) {
-								var message = r.message.message;
-								var new_payment_entries = r.message.records[0];
-								var return_amounts = r.message.records[1];
-								var return_customer_names = r.message.records[2];
-								var return_date = r.message.records[3];
-								var return_unique_reference = r.message.records[4];
-								var return_transaction_reference = r.message.records[5];
-								var return_info = r.message.records[6];
+								// if iban is correct
+								if (r.message == true) {
+									frappe.call({
+										method: 'erpnextswiss.erpnextswiss.page.bankimport.bankimport.read_camt054',
+										args: {
+											content: content,
+											bank: bank,
+											account: account,
+											auto_submit: auto_submit
+										},
+										callback: function(r) {
+											var message = r.message.message;
+											var new_payment_entries = r.message.records[0];
+											var return_amounts = r.message.records[1];
+											var return_customer_names = r.message.records[2];
+											var return_date = r.message.records[3];
+											var return_unique_reference = r.message.records[4];
+											var return_transaction_reference = r.message.records[5];
+											var return_info = r.message.records[6];
 
-								if (r.message) {
-									frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference, return_info );
+											if (r.message) {
+												frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference, return_info );
+											}
+										}
+									});
+									frappe.show_alert({
+										message:__('The iban of the selected bank and the iban of the XML file are identical'),
+										indicator:'green'
+									}, 5);
+								} else {
+									frappe.dom.unfreeze();
+									frappe.warn(__('Are you sure you want to proceed?'),
+										__('The iban of the selected bank and the iban of the XML file are not identical'),
+										() => {
+											// call bankimport method with file content
+											frappe.dom.freeze(__("Please wait while the file is being processed..."));
+											frappe.call({
+												method: 'erpnextswiss.erpnextswiss.page.bankimport.bankimport.read_camt054',
+												args: {
+													content: content,
+													bank: bank,
+													account: account,
+													auto_submit: auto_submit
+												},
+												callback: function(r) {
+													var message = r.message.message;
+													var new_payment_entries = r.message.records[0];
+													var return_amounts = r.message.records[1];
+													var return_customer_names = r.message.records[2];
+													var return_date = r.message.records[3];
+													var return_unique_reference = r.message.records[4];
+													var return_transaction_reference = r.message.records[5];
+													var return_info = r.message.records[6];
+
+													if (r.message) {
+														frappe.bankimport.render_response(page, message, new_payment_entries, return_amounts, return_customer_names, return_date, return_unique_reference, return_transaction_reference, return_info );
+													}
+												}
+											});
+										},
+										__('Continue'),
+										true // Sets dialog as minimizable
+									)
 								}
 							}
 						});
+
+
 					}
 					else if (format == "camt053") {
 						// call bankimport method with file content
@@ -146,7 +202,7 @@ frappe.bankimport = {
 							}
 						});
 					} else {
-						frappe.msgprint("Unknown format. Please contact your system manager");
+						frappe.msgprint(__("Unknown format."));
 					}
 				}
 				// assign an error handler event
