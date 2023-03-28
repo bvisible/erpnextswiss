@@ -10,6 +10,7 @@
   "customer",
   "customer_name",
   "email",
+  "letter_head",
   "column_general",
   "company",
   "title",
@@ -138,11 +139,19 @@
    "fieldtype": "Data",
    "hidden": 1,
    "label": "Email"
+  },
+  {
+   "fetch_from": "company.default_letter_head",
+   "fetch_if_empty": 1,
+   "fieldname": "letter_head",
+   "fieldtype": "Link",
+   "hidden": 1,
+   "label": "Letter Head",
+   "options": "Letter Head"
   }
  ],
  "is_submittable": 1,
- "links": [],
- "modified": "2022-11-11 15:50:11.822986",
+ "modified": "2023-03-16 16:46:58.514747",
  "modified_by": "Administrator",
  "module": "ERPNextSwiss",
  "name": "Payment Reminder",
