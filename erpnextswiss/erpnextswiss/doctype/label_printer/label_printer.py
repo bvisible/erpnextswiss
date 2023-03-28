@@ -68,9 +68,6 @@ def download_label(label_reference, file_content):
 	label = frappe.get_doc("Label Printer", label_reference)
 	with open(file_content, 'r') as f:
 		svg_content = f.read()
-	frappe.log_error("before")
-	frappe.log_error("delete", cleanup(file_content))
-	frappe.log_error("after")
 	frappe.local.response.filename = "{name}.pdf".format(name=label_reference.replace(" ", "-").replace("/", "-"))
 	frappe.local.response.filecontent = create_pdf(label, svg_content)
 	frappe.local.response.type = "pdf"
