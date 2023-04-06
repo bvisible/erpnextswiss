@@ -62,25 +62,32 @@ def create_payment_reminders(company):
         except:
             max_level = 3
         for customer in customers:
-            sql_query = ("""SELECT 
-                        `name`, 
-                        `due_date`, 
-                        `posting_date`, 
-                        `payment_reminder_level`, 
-                        `grand_total`, 
-                        `outstanding_amount` , 
-                        `currency`,
-                        `contact_email`
-                    FROM `tabSales Invoice` 
-                    WHERE `outstanding_amount` > 0 AND `customer` = '{customer}'
-                      AND `docstatus` = 1
-                      AND `enable_lsv` = 0
-                      AND (`due_date` < CURDATE())
-                      AND `company` = "{company}"
-                      AND ((`exclude_from_payment_reminder_until` IS NULL) OR (`exclude_from_payment_reminder_until` < CURDATE()));
-                    """.format(customer=customer.customer, company=company))
-            open_invoices = frappe.db.sql(sql_query, as_dict=True)
+            #////
+            sql_query = """
+                SELECT 
+                    `name`, 
+                    `due_date`, 
+                    `posting_date`, 
+                    `payment_reminder_level`, 
+                    `grand_total`, 
+                    `outstanding_amount`, 
+                    `currency`,
+                    `contact_email`
+                FROM `tabSales Invoice` 
+                WHERE 
+                    `outstanding_amount` > 0 
+                    AND `customer` = %s
+                    AND `docstatus` = 1
+                    AND `enable_lsv` = 0
+                    AND `due_date` < CURDATE()
+                    AND `company` = %s
+                    AND (`exclude_from_payment_reminder_until` IS NULL OR `exclude_from_payment_reminder_until` < CURDATE());
+            """
+
+            open_invoices = frappe.db.sql(sql_query, (customer.customer, company), as_dict=True)
+            #////
             email = None
+
             if open_invoices:
                 now = datetime.now()
                 invoices = []
