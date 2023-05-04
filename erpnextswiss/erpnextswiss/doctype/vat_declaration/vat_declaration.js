@@ -45,6 +45,11 @@ frappe.ui.form.on('VAT Declaration', {
             cur_frm.set_value('title', title + " - " + (frm.doc.cmp_abbr || ""));
         }
     },
+    onload_post_render: function(frm) {
+        if (frm.doc.__islocal) {
+            get_tax_rates(frm);
+        }
+    },
     company: function(frm) {
         if ((frm.doc.__islocal) && (frm.doc.company)) {
             // replace company key
@@ -65,34 +70,69 @@ frappe.ui.form.on('VAT Declaration', {
     }
 });
 
+function get_tax_rates(frm) {
+    console.log("get tax rates")
+    frappe.db.get_value("Account", {"tax_code": "302", "company": frm.doc.company}, "tax_rate").then((r) => {
+        frm.set_value("normal_rate", r.message.tax_rate);
+    });
+    frappe.db.get_value("Account", {"tax_code": "312", "company": frm.doc.company}, "tax_rate").then((r) => {
+        frm.set_value("reduced_rate", r.message.tax_rate);
+    });
+    frappe.db.get_value("Account", {"tax_code": "342", "company": frm.doc.company}, "tax_rate").then((r) => {
+        frm.set_value("lodging_rate", r.message.tax_rate);
+    });
+}
 // retrieve values from database
 function get_values(frm) {
-    // Total revenue
-    get_total(frm, "viewVAT_200", 'total_revenue');
-    // get_total(frm, "viewVAT_205", 'non_taxable_revenue');
-    // Deductions
-    get_total(frm, "viewVAT_220", 'tax_free_services');
-    get_total(frm, "viewVAT_221", 'revenue_abroad');
-    get_total(frm, "viewVAT_225", 'transfers');
-    get_total(frm, "viewVAT_230", 'non_taxable_services');
-    get_total(frm, "viewVAT_235", 'losses');
-    // Tax calculation
-    if (frm.doc.vat_type == "effective") {
-        get_total(frm, "viewVAT_302", 'normal_amount');
-        get_total(frm, "viewVAT_312", 'reduced_amount');
-        get_total(frm, "viewVAT_342", 'lodging_amount');
+    let method = ''
+    if(frm.doc.vat_type == "effective invoiced" || frm.doc.vat_type == "flat") {
+        method = 'erpnextswiss.erpnextswiss.doctype.vat_declaration.vat_declaration.get_totals_from_invoices'
+    } else {
+        method = 'erpnextswiss.erpnextswiss.doctype.vat_declaration.vat_declaration.get_total_payments'
     }
-    else {
-        get_total(frm, "viewVAT_322", 'amount_1');
-        get_total(frm, "viewVAT_332", 'amount_2');
-    }
-    get_total(frm, "viewVAT_382", 'additional_amount');
-    get_tax(frm, "viewVAT_382", 'additional_tax');
-    // Pretaxes
-    if (frm.doc.vat_type == "effective") {
-        get_tax(frm, "viewVAT_400", 'pretax_material');
-        get_tax(frm, "viewVAT_405", 'pretax_investments');
-    }
+
+    frappe.call({
+        method: method,
+        args: {
+            start_date: frm.doc.start_date,
+            end_date: frm.doc.end_date,
+            company: frm.doc.company
+        },
+        callback: function(r) {
+            if (r.message) {
+                let res = r.message;
+                frm.set_value('total_revenue', res.net_sell.total_credit - res.net_sell.total_debit);
+                // get_total(frm, "viewVAT_205", 'non_taxable_revenue');
+                // Deductions
+                /*frm.set_value(frm, "viewVAT_220", 'tax_free_services',);
+                frm.set_value(frm, "viewVAT_221", 'revenue_abroad',);
+                frm.set_value(frm, "viewVAT_225", 'transfers',);
+                frm.set_value(frm, "viewVAT_230", 'non_taxable_services',);
+                frm.set_value(frm, "viewVAT_235", 'losses',);*/
+                // Tax calculation
+                if (frm.doc.vat_type.includes("effective")) {
+                    frm.set_value('normal_tax', res.sums_by_tax_code['302'] ? (res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit) : 0);
+                    frm.set_value('reduced_tax', res.sums_by_tax_code['312'] ? (res.sums_by_tax_code['312'].total_credit - res.sums_by_tax_code['312'].total_debit) : 0);
+                    frm.set_value('lodging_tax', res.sums_by_tax_code['342'] ? (res.sums_by_tax_code['342'].total_credit - res.sums_by_tax_code['342'].total_debit) : 0);
+                }
+                else {
+                    //frm.set_value(frm, "viewVAT_322", 'amount_1',);
+                    //frm.set_value(frm, "viewVAT_332", 'amount_2',);
+                }
+                //frm.set_value(frm, "viewVAT_382", 'additional_amount',);
+                //frm.set_value(frm, "viewVAT_382", 'additional_tax',);
+                // Pretaxes
+                if (frm.doc.vat_type.includes("effective")) {
+                    frm.set_value('pretax_material', res.sums_by_tax_code['400'] ? (res.sums_by_tax_code['400'].total_debit - res.sums_by_tax_code['400'].total_credit) : 0);
+                    frm.set_value('pretax_investments', res.sums_by_tax_code['405'] ? (res.sums_by_tax_code['405'].total_debit - res.sums_by_tax_code['405'].total_credit) : 0);
+                    frm.set_value('missing_pretax', res.sums_by_tax_code['410'] ? (res.sums_by_tax_code['410'].total_debit - res.sums_by_tax_code['410'].total_credit) : 0);
+                    frm.set_value('pretax_correction_mixed', res.sums_by_tax_code['415'] ? (res.sums_by_tax_code['415'].total_debit - res.sums_by_tax_code['415'].total_credit) : 0);
+                    frm.set_value('pretax_correction_other', res.sums_by_tax_code['420'] ? (res.sums_by_tax_code['420'].total_debit - res.sums_by_tax_code['420'].total_credit) : 0);
+                }
+                frm.refresh_fields();
+            }
+        }
+    });
 }
 
 // force recalculate
@@ -103,18 +143,63 @@ function recalculate(frm) {
 }
 
 // add change handlers for tax positions
-frappe.ui.form.on("VAT Declaration", "normal_amount", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "reduced_amount", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "lodging_amount", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "additional_amount", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "amount_1", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "amount_2", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "rate_1", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "rate_2", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "normal_rate", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "reduced_rate", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "lodging_rate", function(frm) { update_tax_amounts(frm) } );
-frappe.ui.form.on("VAT Declaration", "additional_tax", function(frm) { update_tax_amounts(frm) } );
+frappe.ui.form.on("VAT Declaration", "normal_amount", function(frm) { update_tax_or_amount(frm, "normal", true) } );
+frappe.ui.form.on("VAT Declaration", "normal_rate", function(frm) { update_tax_or_amount(frm, "normal", true) } );
+frappe.ui.form.on("VAT Declaration", "normal_tax", function(frm) { update_tax_or_amount(frm, "normal", false) } );
+frappe.ui.form.on("VAT Declaration", "reduced_amount", function(frm) { update_tax_or_amount(frm, "reduced", true) } );
+frappe.ui.form.on("VAT Declaration", "reduced_rate", function(frm) { update_tax_or_amount(frm, "reduced", true) } );
+frappe.ui.form.on("VAT Declaration", "reduced_tax", function(frm) { update_tax_or_amount(frm, "reduced", false) } );
+frappe.ui.form.on("VAT Declaration", "lodging_amount", function(frm) { update_tax_or_amount(frm, "lodging", true) } );
+frappe.ui.form.on("VAT Declaration", "lodging_rate", function(frm) { update_tax_or_amount(frm, "lodging", true) } );
+frappe.ui.form.on("VAT Declaration", "lodging_tax", function(frm) { update_tax_or_amount(frm, "lodging", false) } );
+frappe.ui.form.on("VAT Declaration", "additional_amount", function(frm) { update_tax_or_amount(frm, "additional", true) } );
+frappe.ui.form.on("VAT Declaration", "additional_tax", function(frm) { update_tax_or_amount(frm, "additional", false) } );
+frappe.ui.form.on("VAT Declaration", "amount_1", function(frm) { update_tax_or_amount(frm, "_1", true) } );
+frappe.ui.form.on("VAT Declaration", "rate_1", function(frm) { update_tax_or_amount(frm, "_1", true) } );
+frappe.ui.form.on("VAT Declaration", "tax_1", function(frm) { update_tax_or_amount(frm, "_1", false) } );
+frappe.ui.form.on("VAT Declaration", "amount_2", function(frm) { update_tax_or_amount(frm, "_2", true) } );
+frappe.ui.form.on("VAT Declaration", "rate_2", function(frm) { update_tax_or_amount(frm, "_2", true) } );
+frappe.ui.form.on("VAT Declaration", "tax_2", function(frm) { update_tax_or_amount(frm, "_2", false) } );
+
+function update_tax_or_amount(frm, concerned_tax, from_amount=false) {
+    if(concerned_tax != "additional") {
+        if (from_amount) {
+            let amount = null;
+            let tax_rate = null;
+            let tax_field = null;
+            if(concerned_tax != "_1" && concerned_tax != "_2") {
+                amount = frm.get_field(concerned_tax + '_amount').value;
+                tax_rate = frm.get_field(concerned_tax + '_rate').value;
+                tax_field = concerned_tax + '_tax';
+            } else {
+                amount = frm.get_field('amount' + concerned_tax).value;
+                tax_rate = frm.get_field('rate' +concerned_tax).value;
+                tax_field = 'tax' + concerned_tax;
+            }
+            let new_tax = amount * tax_rate / 100;
+            frm.get_field(tax_field).set_input(new_tax);
+            //frm.set_value(tax, amount * (frm.doc[tax.replace('amount', 'rate')] / 100));
+        } else {
+            let tax = null;
+            let tax_rate = null;
+            let amount_field = null;
+            if(concerned_tax != "_1" && concerned_tax != "_2") {
+                tax = frm.get_field(concerned_tax + '_tax').value;
+                tax_rate = frm.get_field(concerned_tax + '_rate').value;
+                amount_field = concerned_tax + '_amount';
+            } else {
+                tax = frm.get_field('tax' + concerned_tax).value;
+                tax_rate = frm.get_field('rate' + concerned_tax).value;
+                amount_field = 'amount' + concerned_tax;
+            }
+            let new_amount = tax / (tax_rate / 100);
+            frm.get_field(amount_field).set_input(new_amount);
+        }
+    }
+    //frm.refresh_fields();
+    let total_taxes = (frm.get_field("normal_tax").value || 0) + (frm.get_field("reduced_tax").value || 0) + (frm.get_field("lodging_tax").value || 0) + (frm.get_field("tax_1").value || 0) + (frm.get_field("tax_2").value || 0) + (frm.get_field("additional_tax").value || 0);
+    frm.set_value('total_tax', total_taxes);
+}
 
 function update_tax_amounts(frm) {
     // effective tax: tax rate on net amount
@@ -171,7 +256,7 @@ function get_total(frm, view, target) {
                 frm.set_value(target, r.message.total);
             }
         }
-    }); 
+    });
 }
 
 /* view: view to use
@@ -196,6 +281,7 @@ function get_tax(frm, view, target) {
 }
 
 // add change handlers for pretax
+frappe.ui.form.on("VAT Declaration", "total_tax", function(frm) { update_payable_tax(frm) } );
 frappe.ui.form.on("VAT Declaration", "pretax_material", function(frm) { update_payable_tax(frm) } );
 frappe.ui.form.on("VAT Declaration", "pretax_investments", function(frm) { update_payable_tax(frm) } );
 frappe.ui.form.on("VAT Declaration", "missing_pretax", function(frm) { update_payable_tax(frm) } );
@@ -212,5 +298,14 @@ function update_payable_tax(frm) {
         + frm.doc.form_1055;
     frm.set_value('total_pretax_reductions', pretax);
     var payable_tax = frm.doc.total_tax - pretax;
-    frm.set_value('payable_tax', payable_tax);
+    if(payable_tax < 0) {
+        frm.set_value('balance', Math.abs(payable_tax));
+        frm.set_value('payable_tax', 0);
+    } else if(payable_tax == 0) {
+        frm.set_value('payable_tax', 0);
+        frm.set_value('balance', 0);
+    } else {
+        frm.set_value('payable_tax', payable_tax);
+        frm.set_value('balance', 0);
+    }
 }
