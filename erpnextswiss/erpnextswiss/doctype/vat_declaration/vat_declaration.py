@@ -17,8 +17,8 @@ def get_view_total(view_name, start_date, end_date, company=None):
                 FROM ({query}) AS `s` 
                 WHERE `s`.`posting_date` >= '{start_date}' 
                 AND `s`.`posting_date` <= '{end_date}'""".format(
-                query=frappe.get_value("VAT query", view_name, "query"),
-                start_date=start_date, end_date=end_date).replace("{company}", company))        
+            query=frappe.get_value("VAT query", view_name, "query"),
+            start_date=start_date, end_date=end_date).replace("{company}", company))
     else:
         # fallback database view
         """ executes a tax lookup query for a total """
@@ -42,8 +42,8 @@ def get_view_tax(view_name, start_date, end_date, company=None):
                 FROM ({query}) AS `s` 
                 WHERE `s`.`posting_date` >= '{start_date}' 
                 AND `s`.`posting_date` <= '{end_date}'""".format(
-                query=frappe.get_value("VAT query", view_name, "query"),
-                start_date=start_date, end_date=end_date).replace("{company}", company))      
+            query=frappe.get_value("VAT query", view_name, "query"),
+            start_date=start_date, end_date=end_date).replace("{company}", company))
     else:
         # fallback database view
         """ executes a tax lookup query for a tax """
@@ -57,7 +57,7 @@ def get_view_tax(view_name, start_date, end_date, company=None):
         frappe.log_error(err, "VAT declaration {0}".format(view_name))
         total = [{'total': 0}]
     return { 'total': total[0]['total'] }
-  
+
 @frappe.whitelist()
 def get_tax_rate(taxes_and_charges_template):
     sql_query = ("""SELECT `rate` 
@@ -70,7 +70,7 @@ def get_tax_rate(taxes_and_charges_template):
     else:
         return 0
 
-@frappe.whitelist()
+'''@frappe.whitelist()
 def get_total_invoiced(start_date, end_date, company=None):
     sql_query = ("""SELECT IFNULL(SUM(`debit`), 0) AS `debit_total`,  IFNULL(SUM(`credit`), 0) AS `credit_total`
         FROM `tabGL Entry` 
@@ -80,7 +80,7 @@ def get_total_invoiced(start_date, end_date, company=None):
     if company:
         sql_query += " AND `company` = '{0}'".format(company)
     totals = frappe.db.sql(sql_query, as_dict=True)
-    return { 'debit_total': totals[0]['debit_total'], 'credit_total': totals[0]['credit_total'] }
+    return { 'debit_total': totals[0]['debit_total'], 'credit_total': totals[0]['credit_total'] }'''
 
 
 @frappe.whitelist()
@@ -267,7 +267,8 @@ def sum_invoices_vat_amounts(start_date, end_date, company=None, purchase_invoic
 
 
 @frappe.whitelist()
-def get_total_payments(start_date, end_date, company=None):
+def get_total_payments(start_date, end_date, company=None, flat=False):
+    flat = flat.lower() == "true"
     sums_by_tax_code = {}
     sell_account_start = 3000
     sell_account_end = 3999
@@ -275,6 +276,7 @@ def get_total_payments(start_date, end_date, company=None):
     purchase_account_end = 6999
     net_sell = {"total_debit": 0, "total_credit": 0}
     net_purchase = {"total_debit": 0, "total_credit": 0}
+    no_vat_sell = {"total_debit": 0, "total_credit": 0}
 
     if company:
         payment_entries = frappe.db.get_all("Payment Entry", filters={"posting_date": ["between", [start_date, end_date]], "docstatus": 1, "company": company}, fields=["name"])
@@ -284,7 +286,15 @@ def get_total_payments(start_date, end_date, company=None):
         doc = frappe.get_doc("Payment Entry", payment_entry.name)
         for reference in doc.references:
             allocated = reference.allocated_amount
-            rounded_total, grand_total = frappe.db.get_value(reference.reference_doctype, reference.reference_name, ["rounded_total", "grand_total"])
+            meta = frappe.get_meta(reference.reference_doctype)
+            rounded_total = None
+            grand_total = None
+            if meta.has_field("grand_total"):
+                grand_total = frappe.db.get_value(reference.reference_doctype, reference.reference_name, "grand_total")
+            if meta.has_field("rounded_total"):
+                rounded_total = frappe.db.get_value(reference.reference_doctype, reference.reference_name, "rounded_total")
+            if not rounded_total and not grand_total:
+                grand_total = reference.total_amount
             ref_doc_total = rounded_total or grand_total
             ratio = allocated / ref_doc_total
             gl_entries = frappe.db.get_all("GL Entry", filters={"voucher_no": reference.reference_name}, fields=["account", "debit", "credit"])
@@ -307,18 +317,20 @@ def get_total_payments(start_date, end_date, company=None):
                         has_vat = True
                 else:
                     account_number = frappe.db.get_value("Account", gl_entry.account, "account_number")
-                    #frappe.log_error("account_number: {0}, debit: {1}, credit: {2}, account: {3}".format(account_number, gl_entry.debit, gl_entry.credit, gl_entry.account))
                     if int(sell_account_start) <= int(account_number) <= int(sell_account_end):
                         add_sell_debit += gl_entry.debit * ratio
                         add_sell_credit += gl_entry.credit * ratio
                     elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
                         add_purchase_debit += gl_entry.debit * ratio
                         add_purchase_credit += gl_entry.credit * ratio
-            if has_vat:
+            if has_vat is True or flat is True:
                 net_sell["total_debit"] += add_sell_debit
                 net_sell["total_credit"] += add_sell_credit
                 net_purchase["total_debit"] += add_purchase_debit
                 net_purchase["total_credit"] += add_purchase_credit
+            elif has_vat is False:
+                no_vat_sell["total_debit"] += add_sell_debit
+                no_vat_sell["total_credit"] += add_sell_credit
 
     if company:
         consolidated_invoices = frappe.db.get_all("Sales Invoice", filters={"posting_date": ["between", [start_date, end_date]], "is_consolidated": 1, "docstatus": 1, "company": company}, fields=["name"])
@@ -351,11 +363,14 @@ def get_total_payments(start_date, end_date, company=None):
                 elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
                     add_purchase_debit += gl_entry.debit
                     add_purchase_credit += gl_entry.credit
-        if has_vat:
+        if has_vat is True or flat is True:
             net_sell["total_debit"] += add_sell_debit
             net_sell["total_credit"] += add_sell_credit
             net_purchase["total_debit"] += add_purchase_debit
             net_purchase["total_credit"] += add_purchase_credit
+        elif has_vat is False:
+            no_vat_sell["total_debit"] += add_sell_debit
+            no_vat_sell["total_credit"] += add_sell_credit
 
     if company:
         journal_entries = frappe.db.get_all("Journal Entry", filters={"posting_date": ["between", [start_date, end_date]], "docstatus":1, "company": company}, fields=["name"])
@@ -388,16 +403,20 @@ def get_total_payments(start_date, end_date, company=None):
                 elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
                     add_purchase_debit += gl_entry.debit
                     add_purchase_credit += gl_entry.credit
-        if has_vat:
+        if has_vat is True or flat is True:
             net_sell["total_debit"] += add_sell_debit
             net_sell["total_credit"] += add_sell_credit
             net_purchase["total_debit"] += add_purchase_debit
             net_purchase["total_credit"] += add_purchase_credit
+        elif has_vat is False:
+            no_vat_sell["total_debit"] += add_sell_debit
+            no_vat_sell["total_credit"] += add_sell_credit
 
-    return {"sums_by_tax_code": sums_by_tax_code, "net_sell": net_sell, "net_purchase": net_purchase}
+    return {"sums_by_tax_code": sums_by_tax_code, "net_sell": net_sell, "net_purchase": net_purchase, "no_vat_sell": no_vat_sell}
 
 @frappe.whitelist()
-def get_total_invoiced(start_date, end_date, company=None, effective=True):
+def get_total_invoiced(start_date, end_date, company=None, flat=False):
+    flat = flat.lower() == "true"
     sums_by_tax_code = {}
     sell_account_start = 3000
     sell_account_end = 3999
@@ -405,6 +424,7 @@ def get_total_invoiced(start_date, end_date, company=None, effective=True):
     purchase_account_end = 6999
     net_sell = {"total_debit": 0, "total_credit": 0}
     net_purchase = {"total_debit": 0, "total_credit": 0}
+    no_vat_sell = {"total_debit": 0, "total_credit": 0}
 
     if company:
         invoices = frappe.db.get_all("Sales Invoice", filters={"posting_date": ["between", [start_date, end_date]], "docstatus": 1, "company": company}, fields=["name"])
@@ -433,18 +453,65 @@ def get_total_invoiced(start_date, end_date, company=None, effective=True):
                     has_vat = True
             else:
                 account_number = frappe.db.get_value("Account", gl_entry.account, "account_number")
-                #frappe.log_error("account_number: {0}, debit: {1}, credit: {2}, account: {3}".format(account_number, gl_entry.debit, gl_entry.credit, gl_entry.account))
                 if int(sell_account_start) <= int(account_number) <= int(sell_account_end):
                     add_sell_debit += gl_entry.debit
                     add_sell_credit += gl_entry.credit
                 elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
                     add_purchase_debit += gl_entry.debit
                     add_purchase_credit += gl_entry.credit
-        if has_vat or not effective:
+
+        if has_vat is True or flat is True:
             net_sell["total_debit"] += add_sell_debit
             net_sell["total_credit"] += add_sell_credit
             net_purchase["total_debit"] += add_purchase_debit
             net_purchase["total_credit"] += add_purchase_credit
+        elif has_vat is False:
+            no_vat_sell["total_debit"] += add_sell_debit
+            no_vat_sell["total_credit"] += add_sell_credit
+
+    if company:
+        invoices = frappe.db.get_all("Purchase Invoice", filters={"posting_date": ["between", [start_date, end_date]], "docstatus": 1, "company": company}, fields=["name"])
+    else:
+        invoices = frappe.db.get_all("Purchase Invoice", filters={"posting_date": ["between", [start_date, end_date]], "docstatus": 1}, fields=["name"])
+    for invoice in invoices:
+        gl_entries = frappe.db.get_all("GL Entry", filters={"voucher_no": invoice.name}, fields=["account", "debit", "credit"])
+        has_vat = False
+        add_sell_debit = 0
+        add_sell_credit = 0
+        add_purchase_debit = 0
+        add_purchase_credit = 0
+        gl_entries_list = []
+        for gl_entry in gl_entries:
+            gl_entries_list.append(gl_entry)
+            tax_code = frappe.db.get_value("Account", gl_entry.account, "tax_code")
+            account_number = frappe.db.get_value("Account", gl_entry.account, "account_number")
+            if tax_code:
+                if tax_code not in sums_by_tax_code:
+                    sums_by_tax_code[tax_code] = {
+                        "total_debit": 0,
+                        "total_credit": 0
+                    }
+                sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
+                sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                if not has_vat and (gl_entry.debit != 0 or gl_entry.credit != 0):
+                    has_vat = True
+            else:
+                if flat:
+                    account_number = frappe.db.get_value("Account", gl_entry.account, "account_number")
+                    if int(sell_account_start) <= int(account_number) <= int(sell_account_end):
+                        add_sell_debit += gl_entry.debit
+                        add_sell_credit += gl_entry.credit
+                    elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
+                        add_purchase_debit += gl_entry.debit
+                        add_purchase_credit += gl_entry.credit
+        if has_vat is True or flat is True:
+            net_sell["total_debit"] += add_sell_debit
+            net_sell["total_credit"] += add_sell_credit
+            net_purchase["total_debit"] += add_purchase_debit
+            net_purchase["total_credit"] += add_purchase_credit
+        elif has_vat is False:
+            no_vat_sell["total_debit"] += add_sell_debit
+            no_vat_sell["total_credit"] += add_sell_credit
 
     if company:
         journal_entries = frappe.db.get_all("Journal Entry", filters={"posting_date": ["between", [start_date, end_date]], "docstatus":1, "company": company}, fields=["name"])
@@ -477,10 +544,13 @@ def get_total_invoiced(start_date, end_date, company=None, effective=True):
                 elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
                     add_purchase_debit += gl_entry.debit
                     add_purchase_credit += gl_entry.credit
-        if has_vat or not effective:
+        if has_vat is True or flat is True:
             net_sell["total_debit"] += add_sell_debit
             net_sell["total_credit"] += add_sell_credit
             net_purchase["total_debit"] += add_purchase_debit
             net_purchase["total_credit"] += add_purchase_credit
+        elif has_vat is False:
+            no_vat_sell["total_debit"] += add_sell_debit
+            no_vat_sell["total_credit"] += add_sell_credit
 
-    return {"sums_by_tax_code": sums_by_tax_code, "net_sell": net_sell, "net_purchase": net_purchase}
+    return {"sums_by_tax_code": sums_by_tax_code, "net_sell": net_sell, "net_purchase": net_purchase, "no_vat_sell": no_vat_sell}
