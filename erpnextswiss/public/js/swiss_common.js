@@ -105,7 +105,7 @@ function get_esr_code(esr_base) {
 }  
 
 // this function resolves a pin code and fills the city into the target field of a form
-function get_city_from_pincode(pincode, target_field, state_field="", country=null) {
+function get_city_from_pincode(pincode, target_field, state_field="", country=null, cur_dialog=null) {
     var filters = [['pincode','=', pincode]];
     if (country) {
         filters.push(['country', '=', country]);
@@ -121,13 +121,15 @@ function get_city_from_pincode(pincode, target_field, state_field="", country=nu
             },
             async: false,
             callback: function(response) {
-                if (response.message) {
+                var form = cur_frm || cur_dialog;
+                if (!form) return;
+                if (response.message && response.message.length > 0) {
                     if (response.message.length == 1) {
                         // got exactly one city
                         var city = response.message[0].city;
-                        cur_frm.set_value(target_field, city);
+                        form.set_value(target_field, city);
                         if (state_field != "") {
-                            cur_frm.set_value(state_field, response.message[0].canton_code);
+                            form.set_value(state_field, response.message[0].canton_code);
                         }
                     } else {
                         // multiple cities found, show selection
@@ -147,9 +149,9 @@ function get_city_from_pincode(pincode, target_field, state_field="", country=nu
                             ],
                             function(values){
                                 var city = values.city;
-                                cur_frm.set_value(target_field, city);
+                                form.set_value(target_field, city);
                                 if (state_field != "") {
-                                    cur_frm.set_value(state_field, response.message[0].canton_code);
+                                    form.set_value(state_field, response.message[0].canton_code);
                                 }
                             },
                             __('City'),
@@ -158,7 +160,7 @@ function get_city_from_pincode(pincode, target_field, state_field="", country=nu
                     }
                 } else {
                     // got no match
-                    cur_frm.set_value(target_field, "");
+                    form.set_value(target_field, "");
                     console.log("No match");
                 }
             }
