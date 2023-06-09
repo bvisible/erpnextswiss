@@ -7,14 +7,14 @@ frappe.ui.form.on('VAT Declaration', {
         {
             get_values(frm);
         });
-        frm.add_custom_button(__("Recalculate"), function()
+        /*frm.add_custom_button(__("Recalculate"), function()
         {
             recalculate(frm);
-        });
+        });*/
 
-        update_taxable_revenue(frm);
+        /*update_taxable_revenue(frm);
         update_tax_amounts(frm);
-        update_payable_tax(frm);
+        update_payable_tax(frm);*/
     },
     onload: function(frm) {
         if (frm.doc.__islocal) {
@@ -71,7 +71,7 @@ frappe.ui.form.on('VAT Declaration', {
 });
 
 function get_tax_rates(frm) {
-    console.log("get tax rates")
+    //console.log("get tax rates")
     frappe.db.get_value("Account", {"tax_code": "302", "company": frm.doc.company}, "tax_rate").then((r) => {
         frm.set_value("normal_rate", r.message.tax_rate);
     });
@@ -102,8 +102,8 @@ function get_values(frm) {
         callback: function(r) {
             if (r.message) {
                 let res = r.message;
-                console.log(res);
-                let total = (res.net_sell.total_credit - res.net_sell.total_debit);// - (res.net_purchase.total_debit - res.net_purchase.total_credit);
+                //console.log(res);
+                let total = (res.net_sell.total_credit - res.net_sell.total_debit + res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);// - (res.net_purchase.total_debit - res.net_purchase.total_credit);
                 frm.set_value('total_revenue', total);
                 // get_total(frm, "viewVAT_205", 'non_taxable_revenue');
                 // Deductions
@@ -212,8 +212,9 @@ function update_tax_or_amount(frm, concerned_tax, from_amount=false) {
                     tax_field = 'tax' + concerned_tax;
                 }
                 let new_tax = amount * tax_rate / 100;
-                frm.get_field(tax_field).set_input(new_tax);
+                //frm.get_field(tax_field).set_input(new_tax);
                 //frm.set_value(tax, amount * (frm.doc[tax.replace('amount', 'rate')] / 100));
+                frappe.model.set_value(frm.doctype, frm.docname, tax_field, new_tax);
             } else {
                 let tax = null;
                 let tax_rate = null;
@@ -228,7 +229,8 @@ function update_tax_or_amount(frm, concerned_tax, from_amount=false) {
                     amount_field = 'amount' + concerned_tax;
                 }
                 let new_amount = tax / (tax_rate / 100);
-                frm.get_field(amount_field).set_input(new_amount);
+                //frm.get_field(amount_field).set_input(flt(new_amount));
+                frappe.model.set_value(frm.doctype, frm.docname, amount_field, new_amount);
             }
         }
         //frm.refresh_fields();
@@ -263,14 +265,14 @@ frappe.ui.form.on("VAT Declaration", "losses", function(frm) { update_taxable_re
 frappe.ui.form.on("VAT Declaration", "misc", function(frm) { update_taxable_revenue(frm) } );
 
 function update_taxable_revenue(frm) {
-    console.log("update taxable revenue")
+    //console.log("update taxable revenue")
     var deductions = (frm.get_field("tax_free_services").value || 0) +
         (frm.get_field("revenue_abroad").value || 0) +
         (frm.get_field("transfers").value || 0) +
         (frm.get_field("non_taxable_services").value || 0) +
         (frm.get_field("losses").value || 0) +
         (frm.get_field("misc").value || 0);
-    console.log(deductions, frm.get_field("total_revenue").value || 0, frm.get_field("non_taxable_revenue").value || 0);
+    //console.log(deductions, frm.get_field("total_revenue").value || 0, frm.get_field("non_taxable_revenue").value || 0);
     var taxable = (frm.get_field("total_revenue").value || 0) - (frm.get_field("non_taxable_revenue").value || 0) - deductions;
     frm.set_value('total_deductions', deductions);
     frm.set_value('taxable_revenue', taxable);
