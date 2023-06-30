@@ -128,6 +128,7 @@ function get_city_from_pincode(pincode, target_field, state_field="", country=nu
                         // got exactly one city
                         var city = response.message[0].city;
                         form.set_value(target_field, city);
+                        form.set_value("pincode", response.message[0].pincode);
                         if (state_field != "") {
                             form.set_value(state_field, response.message[0].canton_code);
                         }
@@ -160,7 +161,12 @@ function get_city_from_pincode(pincode, target_field, state_field="", country=nu
                     }
                 } else {
                     // got no match
-                    form.set_value(target_field, "");
+
+                    if (form.get_value("pincode").length == 4) {
+                        setTimeout(function() {
+                            form.set_value(target_field, "");
+                        }, 100);
+                    }
                     console.log("No match");
                 }
             }
