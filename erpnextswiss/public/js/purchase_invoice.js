@@ -191,7 +191,7 @@ function check_scan_input(frm, default_settings, code_scan) {
     } else {
         // QR Section 
         var lines = code_scan.split("\n");      // separate lines
-        console.log(lines);
+        //console.log(lines);
         if (lines.length < 28) {
             var invalid_esr_code_line = __("Invalid ESR Code Line or QR-Code");
             frappe.msgprint(invalid_esr_code_line);
@@ -287,16 +287,16 @@ function check_scan_input(frm, default_settings, code_scan) {
             }
 
 
-            console.log("type: " + qr_type);
-            console.log("amount: " + amount);
-            console.log("reference: " + reference);
-            console.log("participant: " + participant);
-            console.log("supplier_name: " + supplier_name);
-            console.log("address: " + address);
-            console.log("street_number: " + street_number);
-            console.log("zip: " + zip);
-            console.log("city: " + city);
-            console.log("country: " + country);
+            //console.log("type: " + qr_type);
+            //console.log("amount: " + amount);
+            //console.log("reference: " + reference);
+            //console.log("participant: " + participant);
+            //console.log("supplier_name: " + supplier_name);
+            //console.log("address: " + address);
+            //console.log("street_number: " + street_number);
+            //console.log("zip: " + zip);
+            //console.log("city: " + city);
+            //console.log("country: " + country);
 
             get_data_based_on_esr(frm, participant, reference, amount, default_settings, address, street_number, zip, city, country, supplier_name, qr_type);
         }
@@ -339,8 +339,9 @@ function get_data_based_on_esr(frm, participant, reference, amount, default_sett
 }
 
 function show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, supplier_list, address=null, street_number=null, zip=null, city=null, country=null, supplier_name=null, qr_type=null) {
+    //console.log("show_esr_detail_dialog");
     var field_list = [];
-    console.log(supplier);
+    //console.log(supplier);
     if (supplier) {
         if (!cur_frm.doc.supplier||cur_frm.doc.supplier == supplier) {
             var supplier_matched_txt = "<p style='color: green;'>" + __("Supplier matched") + "</p>";
@@ -374,9 +375,9 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
 
 
             setTimeout(() => {
-                console.log("Create supplier loaded");
+                //console.log("Create supplier loaded");
                 $(cur_dialog.$wrapper).on('click','#create_supplier', function() {
-                    console.log("Create supplier");
+                    //console.log("Create supplier");
                     frappe.call({
                         method: 'neoffice_theme.events.create_supplier',
                         args: {
@@ -385,8 +386,8 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
                             'default_payment_method': qr_type
                         },
                         callback: function(r) {
-                            console.log("Supplier created");
-                            console.log(r)
+                            //console.log("Supplier created");
+                            //console.log(r)
                             if (!address || address === '' || address === null || address === undefined) {
                                 address = __("No address");
                                 frappe.warn(__("No address in the QR"),
@@ -407,8 +408,8 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
                                     'zip_code': zip
                                 },
                                 callback: function(r) {
-                                    console.log("Address created")
-                                    console.log(r)
+                                    //console.log("Address created")
+                                    //console.log(r)
                                     frappe.db.set_value('Supplier', supplier_name, 'supplier_primary_address', r.message.name)
                                     cur_dialog.set_value("supplier", supplier_name)
                                     $('[data-fieldname="supplier"] .help-box p').attr("style","color: green;").text(__("Supplier create !"));
@@ -464,7 +465,7 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
         frappe.db.get_value("Supplier", supplier_name, "product_default",(r) => {
             if(r.product_default){
                 setTimeout(() => {
-                    console.log(r.product_default);
+                    //console.log(r.product_default);
                     cur_dialog.set_value("default_item", r.product_default);
                 }, 200);
             }
@@ -492,6 +493,7 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
 }
 
 function fetch_esr_details_to_new_sinv(frm, values) {
+    //console.log("fetch_esr_details_to_new_sinv");
     // remove all rows
     var tbl = cur_frm.doc.items || [];
     var i = tbl.length;
@@ -501,10 +503,9 @@ function fetch_esr_details_to_new_sinv(frm, values) {
             cur_frm.get_field("items").grid.grid_rows[i].remove();
         }
     }
-    frappe.db.get_value("Supplier", cur_frm.doc.supplier, "tax_category",(r) => {
-
+    cur_frm.set_value("supplier", values.supplier);
+    frappe.db.get_value("Supplier", values.supplier, "tax_category",(r) => {
         cur_frm.refresh_field('items');
-        cur_frm.set_value("supplier", values.supplier);
         if(values.reference){
             cur_frm.set_value("payment_type", 'QRR');
             cur_frm.set_value("esr_reference_number", values.reference);
@@ -542,8 +543,9 @@ function fetch_esr_details_to_new_sinv(frm, values) {
 }
 
 function fetch_esr_details_to_existing_sinv(frm, values) {
-    frappe.db.get_value("Supplier", cur_frm.doc.supplier, "tax_category",(r) => {
-        cur_frm.set_value("supplier", values.supplier);
+    //console.log("fetch_esr_details_to_existing_sinv");
+    cur_frm.set_value("supplier", values.supplier);
+    frappe.db.get_value("Supplier", values.supplier, "tax_category",(r) => {
         if(values.reference){
             cur_frm.set_value("payment_type", 'QRR');
             cur_frm.set_value("esr_reference_number", values.reference);
@@ -585,6 +587,7 @@ function fetch_esr_details_to_existing_sinv(frm, values) {
 }
 
 function pull_supplier_defaults(frm) {
+    //console.log("pull_supplier_defaults");
     if (frm.doc.supplier) {
         frappe.call({
             'method': "frappe.client.get",
