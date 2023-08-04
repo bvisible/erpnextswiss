@@ -1,4 +1,4 @@
-// Copyright (c) 2018-2022, libracore (https://www.libracore.com) and contributors
+// Copyright (c) 2018-2023, libracore (https://www.libracore.com) and contributors
 // For license information, please see license.txt
 
 frappe.ui.form.on('VAT Declaration', {
@@ -348,4 +348,30 @@ function update_payable_tax(frm) {
         frm.set_value('payable_tax', payable_tax);
         frm.set_value('balance', 0);
     }
+}
+
+function download_transfer_file(frm) {
+    frappe.call({
+        'method': 'create_transfer_file',
+        'doc': frm.doc,
+        'callback': function(r) {
+            if (r.message) {
+                // prepare the xml file for download
+                download("estv.xml", r.message.content);
+            } 
+        }
+     });   
+}
+
+function download(filename, content) {
+    var element = document.createElement('a');
+    element.setAttribute('href', 'data:application/octet-stream;charset=utf-8,' + encodeURIComponent(content));
+    element.setAttribute('download', filename);
+
+    element.style.display = 'none';
+    document.body.appendChild(element);
+
+    element.click();
+
+    document.body.removeChild(element);
 }
