@@ -567,11 +567,13 @@ def create_payment_entry(date, to_account, received_amount, transaction_id, tran
     if customer_name and customer_invoice and customer_invoice_amount == received_amount:
         auto_submit = True
 
-    if charges is not None and charges > 0:
-        # remove charges to received amount
-        charges = float(charges)
-        received_amount = float(received_amount)
-        received_amount = received_amount - charges
+    active_payment_entry_calculation = frappe.get_value('ERPNextSwiss Settings', None, 'active_payment_entry_calculation')
+    if active_payment_entry_calculation == 1:
+        if charges is not None and charges > 0:
+            # remove charges to received amount
+            charges = float(charges)
+            received_amount = float(received_amount)
+            received_amount = received_amount - charges
 
     if not frappe.db.exists('Payment Entry', {'reference_no': transaction_id}):
         # create new payment entry
@@ -598,12 +600,13 @@ def create_payment_entry(date, to_account, received_amount, transaction_id, tran
             auto_submit = False
 
         # add Payment Entry Deduction entry
-        if charges is not None and charges > 0:
-            tax_entry = new_payment_entry.append('deductions', {})
-            tax_entry.account_head = "Payment Entry Deduction"
-            tax_entry.account = deductions_or_loss
-            tax_entry.cost_center = company_cost_center
-            tax_entry.amount = charges
+        if active_payment_entry_calculation == 1:
+            if charges is not None and charges > 0:
+                tax_entry = new_payment_entry.append('deductions', {})
+                tax_entry.account_head = "Payment Entry Deduction"
+                tax_entry.account = deductions_or_loss
+                tax_entry.cost_center = company_cost_center
+                tax_entry.amount = charges
 
         inserted_payment_entry = new_payment_entry.insert()
         if auto_submit:
