@@ -13,7 +13,7 @@ class VATDeclaration(Document):
         tax_id = frappe.get_value("Company", self.company, "tax_id")
         if not tax_id or len(tax_id) < 12:
             frappe.throw( _("Tax ID/UID missing or invalid. Please configure for company {0}.").format(self.company) )
-            
+
         data = {
             'uid': tax_id[3:].replace(".", "").replace("-", ""),
             'company': self.company,
@@ -323,11 +323,22 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
     net_purchase = {"total_debit": 0, "total_credit": 0}
     no_vat_sell = {"total_debit": 0, "total_credit": 0}
 
+    summary_payment_entry = []
+    summary_sales_invoice = []
+    summary_journal_entry = []
+    summary_no_vat = []
+    summary_purchase_invoice = []
+
     if company:
         payment_entries = frappe.db.get_all("Payment Entry", filters={"posting_date": ["between", [start_date, end_date]], "docstatus": 1, "company": company}, fields=["name"])
     else:
         payment_entries = frappe.db.get_all("Payment Entry", filters={"posting_date": ["between", [start_date, end_date]], "docstatus": 1}, fields=["name"])
     for payment_entry in payment_entries:
+        summary_sums_by_tax_code = {}
+        summary_net_sell = {"total_debit": 0, "total_credit": 0}
+        summary_net_purchase = {"total_debit": 0, "total_credit": 0}
+        summary_no_vat_sell = {"total_debit": 0, "total_credit": 0}
+        summary_no_vat_purchase = {"total_debit": 0, "total_credit": 0}
         doc = frappe.get_doc("Payment Entry", payment_entry.name)
         for reference in doc.references:
             allocated = reference.allocated_amount
@@ -348,6 +359,7 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
             add_sell_credit = 0
             add_purchase_debit = 0
             add_purchase_credit = 0
+            summary_sums_by_tax_code_variable = {}
             for gl_entry in gl_entries:
                 tax_code = frappe.db.get_value("Account", gl_entry.account, "tax_code")
                 if tax_code:
@@ -358,6 +370,23 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
                         }
                     sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit * ratio
                     sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit * ratio
+                    # for summary table
+
+                    if tax_code not in summary_sums_by_tax_code_variable:
+                        summary_sums_by_tax_code_variable[tax_code] = {
+                            "total_debit": 0,
+                            "total_credit": 0
+                        }
+                    if tax_code not in summary_sums_by_tax_code:
+                        summary_sums_by_tax_code[tax_code] = {
+                            "total_debit": 0,
+                            "total_credit": 0
+                        }
+                    summary_sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit * ratio
+                    summary_sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit * ratio
+                    summary_sums_by_tax_code_variable[tax_code]["total_debit"] += gl_entry.debit * ratio
+                    summary_sums_by_tax_code_variable[tax_code]["total_credit"] += gl_entry.credit * ratio
+                    # for summary table
                     if not has_vat and (gl_entry.debit != 0 or gl_entry.credit != 0):
                         has_vat = True
                 else:
@@ -368,20 +397,55 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
                     elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
                         add_purchase_debit += gl_entry.debit * ratio
                         add_purchase_credit += gl_entry.credit * ratio
-            if has_vat is True or flat is True:
+            if has_vat is True:
                 net_sell["total_debit"] += add_sell_debit
                 net_sell["total_credit"] += add_sell_credit
-                net_purchase["total_debit"] += add_purchase_debit
-                net_purchase["total_credit"] += add_purchase_credit
+                if flat is not True:
+                    net_purchase["total_debit"] += add_purchase_debit
+                    net_purchase["total_credit"] += add_purchase_credit
+                # for summary table
+                summary_net_sell["total_debit"] = add_sell_debit
+                summary_net_sell["total_credit"] = add_sell_credit
+                if flat is not True:
+                    summary_net_purchase["total_debit"] = add_purchase_debit
+                    summary_net_purchase["total_credit"] = add_purchase_credit
             elif has_vat is False:
                 no_vat_sell["total_debit"] += add_sell_debit
                 no_vat_sell["total_credit"] += add_sell_credit
+            # variable entry summary
+            entry = {
+                "document_type": reference.reference_doctype,
+                "document_name": reference.reference_name,
+            }
+            if has_vat is True:
+                entry["net_sell"] = add_sell_credit - add_sell_debit
+                entry["net_purchase"] = add_purchase_debit - add_purchase_credit
+                for tax_code in summary_sums_by_tax_code_variable:
+                    index_name = "vat_" + str(tax_code).replace('.', '')
+                    tax_credit = summary_sums_by_tax_code_variable[tax_code]["total_credit"]
+                    tax_debit = summary_sums_by_tax_code_variable[tax_code]["total_debit"]
+                    entry[index_name] = tax_credit - tax_debit if int(tax_code) < 400 else tax_debit - tax_credit
+                if reference.reference_doctype == "Sales Invoice":
+                    summary_sales_invoice.append(entry)
+                elif reference.reference_doctype == "Purchase Invoice":
+                    summary_purchase_invoice.append(entry)
+            else:
+                if add_sell_credit != 0 or add_sell_debit != 0:
+                    entry["no_vat_sell"] = add_sell_credit - add_sell_debit
+                if add_purchase_credit != 0 or add_purchase_debit != 0:
+                    entry["no_vat_purchase"] = add_purchase_credit - add_purchase_debit
+                summary_no_vat.append(entry)
+            # end variable entry summary
 
     if company:
         consolidated_invoices = frappe.db.get_all("Sales Invoice", filters={"posting_date": ["between", [start_date, end_date]], "is_consolidated": 1, "docstatus": 1, "company": company}, fields=["name"])
     else:
         consolidated_invoices = frappe.db.get_all("Sales Invoice", filters={"posting_date": ["between", [start_date, end_date]], "is_consolidated": 1, "docstatus": 1}, fields=["name"])
     for invoice in consolidated_invoices:
+        summary_sums_by_tax_code = {}
+        summary_net_sell = {"total_debit": 0, "total_credit": 0}
+        summary_net_purchase = {"total_debit": 0, "total_credit": 0}
+        summary_no_vat_sell = {"total_debit": 0, "total_credit": 0}
         gl_entries = frappe.db.get_all("GL Entry", filters={"voucher_no": invoice.name}, fields=["account", "debit", "credit"])
         has_vat = False
         add_sell_debit = 0
@@ -398,6 +462,15 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
                     }
                 sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
                 sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                # for summary table
+                if tax_code not in summary_sums_by_tax_code:
+                    summary_sums_by_tax_code[tax_code] = {
+                        "total_debit": 0,
+                        "total_credit": 0
+                    }
+                summary_sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
+                summary_sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                # end summary table
                 if not has_vat and (gl_entry.debit != 0 or gl_entry.credit != 0):
                     has_vat = True
             else:
@@ -408,20 +481,55 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
                 elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
                     add_purchase_debit += gl_entry.debit
                     add_purchase_credit += gl_entry.credit
-        if has_vat is True or flat is True:
+        if has_vat is True:
             net_sell["total_debit"] += add_sell_debit
             net_sell["total_credit"] += add_sell_credit
-            net_purchase["total_debit"] += add_purchase_debit
-            net_purchase["total_credit"] += add_purchase_credit
+            if flat is not True:
+                net_purchase["total_debit"] += add_purchase_debit
+                net_purchase["total_credit"] += add_purchase_credit
+            # for summary table
+            summary_net_sell["total_debit"] = add_sell_debit
+            summary_net_sell["total_credit"] = add_sell_credit
+            if flat is not True:
+                summary_net_purchase["total_debit"] = add_purchase_debit
+                summary_net_purchase["total_credit"] = add_purchase_credit
+            # end summary table
         elif has_vat is False:
             no_vat_sell["total_debit"] += add_sell_debit
             no_vat_sell["total_credit"] += add_sell_credit
+            # for summary table
+            summary_no_vat_sell["total_debit"] = add_sell_debit
+            summary_no_vat_sell["total_credit"] = add_sell_credit
+            # end summary table
+        # sales invoice summary
+        entry = {
+            "document_type": "Sales Invoice",
+            "document_name": invoice.name,
+        }
+        if has_vat:
+            for tax_code in summary_sums_by_tax_code:
+                index_name = "vat_" + str(tax_code).replace('.', '')
+                tax_credit = summary_sums_by_tax_code[tax_code]["total_credit"]
+                tax_debit = summary_sums_by_tax_code[tax_code]["total_debit"]
+                entry[index_name] = tax_credit - tax_debit if int(tax_code) < 400 else tax_debit - tax_credit
+                entry["net_sell"] = summary_net_sell["total_credit"] - summary_net_sell["total_debit"]
+            summary_sales_invoice.append(entry)
+        else:
+            if summary_no_vat_sell["total_credit"] != 0 or summary_no_vat_sell["total_debit"] != 0:
+                entry["no_vat_sell"] = summary_no_vat_sell["total_credit"] - summary_no_vat_sell['total_debit']
+            summary_no_vat.append(entry)
+        # end sales invoice summary
 
     if company:
         journal_entries = frappe.db.get_all("Journal Entry", filters={"posting_date": ["between", [start_date, end_date]], "docstatus":1, "company": company}, fields=["name"])
     else:
         journal_entries = frappe.db.get_all("Journal Entry", filters={"posting_date": ["between", [start_date, end_date]], "docstatus":1}, fields=["name"])
     for journal_entry in journal_entries:
+        summary_sums_by_tax_code = {}
+        summary_net_sell = {"total_debit": 0, "total_credit": 0}
+        summary_net_purchase = {"total_debit": 0, "total_credit": 0}
+        summary_no_vat_sell = {"total_debit": 0, "total_credit": 0}
+        summary_no_vat_purchase = {"total_debit": 0, "total_credit": 0}
         gl_entries = frappe.db.get_all("GL Entry", filters={"voucher_no": journal_entry.name}, fields=["account", "debit", "credit"])
         has_vat = False
         add_sell_debit = 0
@@ -438,6 +546,15 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
                     }
                 sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
                 sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                # for summary table
+                if tax_code not in summary_sums_by_tax_code:
+                    summary_sums_by_tax_code[tax_code] = {
+                        "total_debit": 0,
+                        "total_credit": 0
+                    }
+                summary_sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
+                summary_sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                # end summary table
                 if not has_vat and (gl_entry.debit != 0 or gl_entry.credit != 0):
                     has_vat = True
             else:
@@ -448,20 +565,89 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
                 elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
                     add_purchase_debit += gl_entry.debit
                     add_purchase_credit += gl_entry.credit
-        if has_vat is True or flat is True:
+        if has_vat is True:
             net_sell["total_debit"] += add_sell_debit
             net_sell["total_credit"] += add_sell_credit
-            net_purchase["total_debit"] += add_purchase_debit
-            net_purchase["total_credit"] += add_purchase_credit
+            if flat is not True:
+                net_purchase["total_debit"] += add_purchase_debit
+                net_purchase["total_credit"] += add_purchase_credit
+            # for summary table
+            summary_net_sell["total_debit"] = add_sell_debit
+            summary_net_sell["total_credit"] = add_sell_credit
+            if flat is not True:
+                summary_net_purchase["total_debit"] = add_purchase_debit
+                summary_net_purchase["total_credit"] = add_purchase_credit
+            # end summary table
         elif has_vat is False:
             no_vat_sell["total_debit"] += add_sell_debit
             no_vat_sell["total_credit"] += add_sell_credit
+            # for summary table
+            summary_no_vat_sell["total_debit"] = add_sell_debit
+            summary_no_vat_sell["total_credit"] = add_sell_credit
+            summary_no_vat_purchase["total_debit"] = add_purchase_debit
+            summary_no_vat_purchase["total_credit"] = add_purchase_credit
+            # end summary table
 
-    return {"sums_by_tax_code": sums_by_tax_code, "net_sell": net_sell, "net_purchase": net_purchase, "no_vat_sell": no_vat_sell}
+        # journal entry summary
+        entry = {
+            "document_type": "Journal Entry",
+            "document_name": journal_entry.name,
+        }
+        if has_vat:
+            for tax_code in summary_sums_by_tax_code:
+                index_name = "vat_" + str(tax_code).replace('.', '')
+                tax_credit = summary_sums_by_tax_code[tax_code]["total_credit"]
+                tax_debit = summary_sums_by_tax_code[tax_code]["total_debit"]
+                entry[index_name] = tax_credit - tax_debit if int(tax_code) < 400 else tax_debit - tax_credit
+            if summary_net_sell["total_credit"] != 0 or summary_net_sell["total_debit"] != 0:
+                entry["net_sell"] = summary_net_sell["total_credit"] - summary_net_sell["total_debit"]
+            if summary_net_purchase["total_credit"] != 0 or summary_net_purchase["total_debit"] != 0:
+                entry["net_purchase"] = summary_net_purchase["total_debit"] - summary_net_purchase["total_credit"]
+            summary_journal_entry.append(entry)
+        else:
+            if add_sell_debit != 0 or add_sell_credit != 0:
+                entry["no_vat_sell"] = summary_no_vat_sell["total_credit"] - summary_no_vat_sell['total_debit']
+            if add_purchase_debit != 0 or add_purchase_credit != 0:
+                entry["no_vat_purchase"] = summary_no_vat_purchase["total_debit"] - summary_no_vat_purchase["total_credit"]
+            summary_no_vat.append(entry)
+        # end journal entry summary
+
+    sum_dict = {}
+    for d in summary_journal_entry:
+        for key, value in d.items():
+            if key != "document_type" and key != "document_name":
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_journal_entry.append(sum_dict)
+
+    sum_dict = {}
+    for d in summary_sales_invoice:
+        for key, value in d.items():
+            if key != "document_type" and key != "document_name":
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_sales_invoice.append(sum_dict)
+
+    sum_dict = {}
+    for d in summary_purchase_invoice:
+        for key, value in d.items():
+            if key != "document_type" and key != "document_name":
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_purchase_invoice.append(sum_dict)
+
+    sum_dict = {}
+    for d in summary_no_vat:
+        for key, value in d.items():
+            if key != "document_type" and key != "document_name":
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_no_vat.append(sum_dict)
+
+    return {"sums_by_tax_code": sums_by_tax_code, "net_sell": net_sell, "net_purchase": net_purchase,
+            "no_vat_sell": no_vat_sell, "summary_sales_invoice": summary_sales_invoice,
+            "summary_journal_entry": summary_journal_entry, "summary_no_vat": summary_no_vat,
+            "summary_purchase_invoice": summary_purchase_invoice}
 
 @frappe.whitelist()
 def get_total_invoiced(start_date, end_date, company=None, flat=False):
-    flat = flat.lower() == "true"
+    flat = str(flat).lower() == "true"
     sums_by_tax_code = {}
     sell_account_start = 3000
     sell_account_end = 3999
@@ -471,11 +657,20 @@ def get_total_invoiced(start_date, end_date, company=None, flat=False):
     net_purchase = {"total_debit": 0, "total_credit": 0}
     no_vat_sell = {"total_debit": 0, "total_credit": 0}
 
+    summary_sales_invoice = []
+    summary_purchase_invoice = []
+    summary_journal_entry = []
+    summary_no_vat = []
+
     if company:
         invoices = frappe.db.get_all("Sales Invoice", filters={"posting_date": ["between", [start_date, end_date]], "docstatus": 1, "company": company}, fields=["name"])
     else:
         invoices = frappe.db.get_all("Sales Invoice", filters={"posting_date": ["between", [start_date, end_date]], "docstatus": 1}, fields=["name"])
     for invoice in invoices:
+        summary_sums_by_tax_code = {}
+        summary_net_sell = {"total_debit": 0, "total_credit": 0}
+        summary_net_purchase = {"total_debit": 0, "total_credit": 0}
+        summary_no_vat_sell = {"total_debit": 0, "total_credit": 0}
         gl_entries = frappe.db.get_all("GL Entry", filters={"voucher_no": invoice.name}, fields=["account", "debit", "credit"])
         has_vat = False
         add_sell_debit = 0
@@ -494,6 +689,15 @@ def get_total_invoiced(start_date, end_date, company=None, flat=False):
                     }
                 sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
                 sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                # for summary child table
+                if tax_code not in summary_sums_by_tax_code:
+                    summary_sums_by_tax_code[tax_code] = {
+                        "total_debit": 0,
+                        "total_credit": 0
+                    }
+                summary_sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
+                summary_sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                # end summary child table
                 if not has_vat and (gl_entry.debit != 0 or gl_entry.credit != 0):
                     has_vat = True
             else:
@@ -505,20 +709,53 @@ def get_total_invoiced(start_date, end_date, company=None, flat=False):
                     add_purchase_debit += gl_entry.debit
                     add_purchase_credit += gl_entry.credit
 
-        if has_vat is True or flat is True:
+        if has_vat is True:
             net_sell["total_debit"] += add_sell_debit
             net_sell["total_credit"] += add_sell_credit
-            net_purchase["total_debit"] += add_purchase_debit
-            net_purchase["total_credit"] += add_purchase_credit
+            if flat is not True:
+                net_purchase["total_debit"] += add_purchase_debit
+                net_purchase["total_credit"] += add_purchase_credit
+            # for summary child table
+            summary_net_sell["total_debit"] = add_sell_debit
+            summary_net_sell["total_credit"] = add_sell_credit
+            if flat is not True:
+                summary_net_purchase["total_debit"] = add_purchase_debit
+                summary_net_purchase["total_credit"] = add_purchase_credit
+            # end summary child table
         elif has_vat is False:
             no_vat_sell["total_debit"] += add_sell_debit
             no_vat_sell["total_credit"] += add_sell_credit
+            # for summary child table
+            summary_no_vat_sell["total_debit"] = add_sell_debit
+            summary_no_vat_sell["total_credit"] = add_sell_credit
+            # end summary child table
+        # sales invoice summary
+        entry = {
+            "document_type": "Sales Invoice",
+            "document_name": invoice.name,
+        }
+        if has_vat:
+            for tax_code in summary_sums_by_tax_code:
+                index_name = "vat_" + str(tax_code).replace('.', '')
+                tax_credit = summary_sums_by_tax_code[tax_code]["total_credit"]
+                tax_debit = summary_sums_by_tax_code[tax_code]["total_debit"]
+                entry[index_name] = tax_credit - tax_debit if int(tax_code) < 400 else tax_debit - tax_credit
+            entry["net_sell"] = summary_net_sell["total_credit"] - summary_net_sell["total_debit"]
+            summary_sales_invoice.append(entry)
+        else:
+            entry["no_vat_sell"] = summary_no_vat_sell["total_credit"] - summary_no_vat_sell["total_debit"]
+            summary_no_vat.append(entry)
+        # end sales invoice summary
 
     if company:
         invoices = frappe.db.get_all("Purchase Invoice", filters={"posting_date": ["between", [start_date, end_date]], "docstatus": 1, "company": company}, fields=["name"])
     else:
         invoices = frappe.db.get_all("Purchase Invoice", filters={"posting_date": ["between", [start_date, end_date]], "docstatus": 1}, fields=["name"])
     for invoice in invoices:
+        summary_sums_by_tax_code = {}
+        summary_net_sell = {"total_debit": 0, "total_credit": 0}
+        summary_net_purchase = {"total_debit": 0, "total_credit": 0}
+        summary_no_vat_purchase = {"total_debit": 0, "total_credit": 0}
         gl_entries = frappe.db.get_all("GL Entry", filters={"voucher_no": invoice.name}, fields=["account", "debit", "credit"])
         has_vat = False
         add_sell_debit = 0
@@ -538,10 +775,19 @@ def get_total_invoiced(start_date, end_date, company=None, flat=False):
                     }
                 sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
                 sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                # for summary child table
+                if tax_code not in summary_sums_by_tax_code:
+                    summary_sums_by_tax_code[tax_code] = {
+                        "total_debit": 0,
+                        "total_credit": 0
+                    }
+                summary_sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
+                summary_sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                # end summary child table
                 if not has_vat and (gl_entry.debit != 0 or gl_entry.credit != 0):
                     has_vat = True
             else:
-                if flat:
+                if not flat:
                     account_number = frappe.db.get_value("Account", gl_entry.account, "account_number")
                     if int(sell_account_start) <= int(account_number) <= int(sell_account_end):
                         add_sell_debit += gl_entry.debit
@@ -549,20 +795,50 @@ def get_total_invoiced(start_date, end_date, company=None, flat=False):
                     elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
                         add_purchase_debit += gl_entry.debit
                         add_purchase_credit += gl_entry.credit
-        if has_vat is True or flat is True:
-            net_sell["total_debit"] += add_sell_debit
-            net_sell["total_credit"] += add_sell_credit
-            net_purchase["total_debit"] += add_purchase_debit
-            net_purchase["total_credit"] += add_purchase_credit
+        if has_vat is True:
+            if flat is not True:
+                net_purchase["total_debit"] += add_purchase_debit
+                net_purchase["total_credit"] += add_purchase_credit
+            # for summary child table
+            if flat is not True:
+                summary_net_purchase["total_debit"] = add_purchase_debit
+                summary_net_purchase["total_credit"] = add_purchase_credit
+            # end summary child table
         elif has_vat is False:
             no_vat_sell["total_debit"] += add_sell_debit
             no_vat_sell["total_credit"] += add_sell_credit
+            # for summary child table
+            summary_no_vat_purchase["total_debit"] = add_purchase_debit
+            summary_no_vat_purchase["total_credit"] = add_purchase_credit
+            # end summary child table
+        # purchase invoice summary
+        entry = {
+            "document_type": "Purchase Invoice",
+            "document_name": invoice.name,
+        }
+        if has_vat:
+            for tax_code in summary_sums_by_tax_code:
+                index_name = "vat_" + str(tax_code).replace('.', '')
+                tax_credit = summary_sums_by_tax_code[tax_code]["total_credit"]
+                tax_debit = summary_sums_by_tax_code[tax_code]["total_debit"]
+                entry[index_name] = tax_credit - tax_debit if int(tax_code) < 400 else tax_debit - tax_credit
+            entry["net_purchase"] = summary_net_purchase["total_debit"] - summary_net_purchase["total_credit"]
+            summary_purchase_invoice.append(entry)
+        else:
+            entry["no_vat_purchase"] = summary_no_vat_purchase["total_debit"] - summary_no_vat_purchase["total_credit"]
+            summary_no_vat.append(entry)
+        # end purchase invoice summary
 
     if company:
         journal_entries = frappe.db.get_all("Journal Entry", filters={"posting_date": ["between", [start_date, end_date]], "docstatus":1, "company": company}, fields=["name"])
     else:
         journal_entries = frappe.db.get_all("Journal Entry", filters={"posting_date": ["between", [start_date, end_date]], "docstatus":1}, fields=["name"])
     for journal_entry in journal_entries:
+        summary_sums_by_tax_code = {}
+        summary_net_sell = {"total_debit": 0, "total_credit": 0}
+        summary_net_purchase = {"total_debit": 0, "total_credit": 0}
+        summary_no_vat_sell = {"total_debit": 0, "total_credit": 0}
+        summary_no_vat_purchase = {"total_debit": 0, "total_credit": 0}
         gl_entries = frappe.db.get_all("GL Entry", filters={"voucher_no": journal_entry.name}, fields=["account", "debit", "credit"])
         has_vat = False
         add_sell_debit = 0
@@ -579,6 +855,15 @@ def get_total_invoiced(start_date, end_date, company=None, flat=False):
                     }
                 sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
                 sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                # for summary child table
+                if tax_code not in summary_sums_by_tax_code:
+                    summary_sums_by_tax_code[tax_code] = {
+                        "total_debit": 0,
+                        "total_credit": 0
+                    }
+                summary_sums_by_tax_code[tax_code]["total_debit"] += gl_entry.debit
+                summary_sums_by_tax_code[tax_code]["total_credit"] += gl_entry.credit
+                # end summary child table
                 if not has_vat and (gl_entry.debit != 0 or gl_entry.credit != 0):
                     has_vat = True
             else:
@@ -586,16 +871,82 @@ def get_total_invoiced(start_date, end_date, company=None, flat=False):
                 if int(sell_account_start) <= int(account_number) <= int(sell_account_end):
                     add_sell_debit += gl_entry.debit
                     add_sell_credit += gl_entry.credit
+
                 elif int(purchase_account_start) <= int(account_number) <= int(purchase_account_end):
                     add_purchase_debit += gl_entry.debit
                     add_purchase_credit += gl_entry.credit
-        if has_vat is True or flat is True:
+        if has_vat is True:
             net_sell["total_debit"] += add_sell_debit
             net_sell["total_credit"] += add_sell_credit
-            net_purchase["total_debit"] += add_purchase_debit
-            net_purchase["total_credit"] += add_purchase_credit
+            if flat is not True:
+                net_purchase["total_debit"] += add_purchase_debit
+                net_purchase["total_credit"] += add_purchase_credit
+            # for summary child table
+            summary_net_sell["total_debit"] = add_sell_debit
+            summary_net_sell["total_credit"] = add_sell_credit
+            if flat is not True:
+                summary_net_purchase["total_debit"] = add_purchase_debit
+                summary_net_purchase["total_credit"] = add_purchase_credit
+            # end summary child table
         elif has_vat is False:
             no_vat_sell["total_debit"] += add_sell_debit
             no_vat_sell["total_credit"] += add_sell_credit
+            # for summary child table
+            summary_no_vat_sell["total_debit"] = add_sell_debit
+            summary_no_vat_sell["total_credit"] = add_sell_credit
+            summary_no_vat_purchase["total_debit"] = add_purchase_debit
+            summary_no_vat_purchase["total_credit"] = add_purchase_credit
+            # end summary child table
+        # journal entry summary
+        entry = {
+            "document_type": "Journal Entry",
+            "document_name": journal_entry.name,
+            "net_purchase": summary_net_purchase["total_credit"] - summary_net_purchase['total_debit'],
+            "no_vat_sell": summary_no_vat_sell["total_credit"] - summary_no_vat_sell['total_debit'],
+        }
+        if has_vat:
+            for tax_code in summary_sums_by_tax_code:
+                index_name = "vat_" + str(tax_code).replace('.', '')
+                tax_credit = summary_sums_by_tax_code[tax_code]["total_credit"]
+                tax_debit = summary_sums_by_tax_code[tax_code]["total_debit"]
+                entry[index_name] = tax_credit - tax_debit if int(tax_code) < 400 else tax_debit - tax_credit
+            entry["net_sell"] = summary_net_sell["total_credit"] - summary_net_sell['total_debit']
+            entry["net_purchase"] = summary_net_purchase["total_debit"] - summary_net_purchase['total_credit']
+            summary_journal_entry.append(entry)
+        else:
+            entry["no_vat_sell"] = summary_no_vat_sell["total_credit"] - summary_no_vat_sell['total_debit']
+            entry["no_vat_purchase"] = summary_no_vat_purchase["total_debit"] - summary_no_vat_purchase['total_credit']
+            summary_no_vat.append(entry)
+        # end journal entry summary
 
-    return {"sums_by_tax_code": sums_by_tax_code, "net_sell": net_sell, "net_purchase": net_purchase, "no_vat_sell": no_vat_sell}
+    sum_dict = {}
+    for d in summary_journal_entry:
+        for key, value in d.items():
+            if key != "document_type" and key != "document_name":
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_journal_entry.append(sum_dict)
+
+    sum_dict = {}
+    for d in summary_sales_invoice:
+        for key, value in d.items():
+            if key != "document_type" and key != "document_name":
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_sales_invoice.append(sum_dict)
+
+    sum_dict = {}
+    for d in summary_purchase_invoice:
+        for key, value in d.items():
+            if key != "document_type" and key != "document_name":
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_purchase_invoice.append(sum_dict)
+
+    sum_dict = {}
+    for d in summary_no_vat:
+        for key, value in d.items():
+            if key != "document_type" and key != "document_name":
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_no_vat.append(sum_dict)
+
+    return {"sums_by_tax_code": sums_by_tax_code, "net_sell": net_sell, "net_purchase": net_purchase, "no_vat_sell": no_vat_sell,
+            "summary_sales_invoice": summary_sales_invoice, "summary_purchase_invoice": summary_purchase_invoice,
+            "summary_journal_entry": summary_journal_entry, "summary_no_vat": summary_no_vat}

@@ -102,7 +102,11 @@ function get_values(frm) {
         callback: function(r) {
             if (r.message) {
                 let res = r.message;
-                //console.log(res);
+                console.log(res);
+                frm.set_value('purchase_invoice_summary', res.summary_purchase_invoice)
+                frm.set_value('sales_invoice_summary', res.summary_sales_invoice)
+                frm.set_value('journal_entry_summary', res.summary_journal_entry)
+                frm.set_value('no_vat_summary', res.summary_no_vat)
                 let total = (res.net_sell.total_credit - res.net_sell.total_debit + res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);// - (res.net_purchase.total_debit - res.net_purchase.total_credit);
                 frm.set_value('total_revenue', total);
                 // get_total(frm, "viewVAT_205", 'non_taxable_revenue');
@@ -113,12 +117,24 @@ function get_values(frm) {
                 frm.set_value(frm, "viewVAT_230", 'non_taxable_services',);
                 frm.set_value(frm, "viewVAT_235", 'losses',);*/
                 // Tax calculation
+                frm.set_value("tax_free_services", 0 );
+                frm.set_value("revenue_abroad", 0 );
+                frm.set_value("transfers", 0 );
+                frm.set_value("non_taxable_services", 0 );
+                frm.set_value("losses", 0 );
+                frm.set_value("misc", 0 );
+                frm.set_value("additional_amount", 0 );
+                frm.set_value("additional_tax", 0 );
+                frm.set_value("grants", 0 );
+                frm.set_value("donations", 0 );
                 if (frm.doc.vat_type.includes("effective")) {
                     frm.set_value('non_taxable_revenue', res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);
 
                     frm.set_value('normal_tax', res.sums_by_tax_code['302'] ? (res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit) : 0);
                     frm.set_value('reduced_tax', res.sums_by_tax_code['312'] ? (res.sums_by_tax_code['312'].total_credit - res.sums_by_tax_code['312'].total_debit) : 0);
                     frm.set_value('lodging_tax', res.sums_by_tax_code['342'] ? (res.sums_by_tax_code['342'].total_credit - res.sums_by_tax_code['342'].total_debit) : 0);
+                    console.log(res.sums_by_tax_code['302'], res.sums_by_tax_code['312'], res.sums_by_tax_code['342'])
+                    console.log(res.sums_by_tax_code['302'].total_credit, res.sums_by_tax_code['302'].total_debit, res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit)
 
                     // Pretaxes
                     frm.set_value('pretax_material', res.sums_by_tax_code['400'] ? (res.sums_by_tax_code['400'].total_debit - res.sums_by_tax_code['400'].total_credit) : 0);
@@ -150,20 +166,12 @@ function get_values(frm) {
                     //frm.set_value(frm, "viewVAT_322", 'amount_1',);
                     //frm.set_value(frm, "viewVAT_332", 'amount_2',);
                 }
-                frm.set_value("tax_free_services", 0 );
-                frm.set_value("revenue_abroad", 0 );
-                frm.set_value("transfers", 0 );
-                frm.set_value("non_taxable_services", 0 );
-                frm.set_value("losses", 0 );
-                frm.set_value("misc", 0 );
-                frm.set_value("additional_amount", 0 );
-                frm.set_value("additional_tax", 0 );
-                frm.set_value("grants", 0 );
-                frm.set_value("donations", 0 );
-                //frm.set_value(frm, "viewVAT_382", 'additional_amount',);
-                //frm.set_value(frm, "viewVAT_382", 'additional_tax',);
-                // Pretaxes
-                frm.refresh_fields();
+                //frm.refresh_fields();
+                setTimeout(function() {
+                    update_taxable_revenue(frm);
+                    update_payable_tax(frm);
+                    update_taxable_revenue(frm);
+                }, 200);
             }
         }
     });
@@ -174,6 +182,7 @@ function recalculate(frm) {
     update_taxable_revenue(frm);
     update_tax_amounts(frm);
     update_payable_tax(frm);
+    update_taxable_revenue(frm);
 }
 
 // add change handlers for tax positions
@@ -274,6 +283,7 @@ function update_taxable_revenue(frm) {
         (frm.get_field("misc").value || 0);
     //console.log(deductions, frm.get_field("total_revenue").value || 0, frm.get_field("non_taxable_revenue").value || 0);
     var taxable = (frm.get_field("total_revenue").value || 0) - (frm.get_field("non_taxable_revenue").value || 0) - deductions;
+    console.log(taxable)
     frm.set_value('total_deductions', deductions);
     frm.set_value('taxable_revenue', taxable);
 }
