@@ -90,90 +90,91 @@ function get_values(frm) {
     } else {
         method = 'erpnextswiss.erpnextswiss.doctype.vat_declaration.vat_declaration.get_total_payments'
     }
+    frm.trigger('clear_all_except_four').then(() => {
+        frappe.call({
+            method: method,
+            args: {
+                start_date: frm.doc.start_date,
+                end_date: frm.doc.end_date,
+                company: frm.doc.company,
+                flat: frm.doc.vat_type.includes("flat rate")
+            },
+            freeze: true,
+            callback: function (r) {
+                if (r.message) {
+                    let res = r.message;
+                    console.log(res);
+                    frm.set_value('purchase_invoice_summary', res.summary_purchase_invoice)
+                    frm.set_value('sales_invoice_summary', res.summary_sales_invoice)
+                    frm.set_value('journal_entry_summary', res.summary_journal_entry)
+                    frm.set_value('no_vat_summary', res.summary_no_vat)
+                    let total = (res.net_sell.total_credit - res.net_sell.total_debit + res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);// - (res.net_purchase.total_debit - res.net_purchase.total_credit);
+                    frm.set_value('total_revenue', total);
+                    // get_total(frm, "viewVAT_205", 'non_taxable_revenue');
+                    // Deductions
+                    /*frm.set_value(frm, "viewVAT_220", 'tax_free_services',);
+                    frm.set_value(frm, "viewVAT_221", 'revenue_abroad',);
+                    frm.set_value(frm, "viewVAT_225", 'transfers',);
+                    frm.set_value(frm, "viewVAT_230", 'non_taxable_services',);
+                    frm.set_value(frm, "viewVAT_235", 'losses',);*/
+                    // Tax calculation
+                    frm.set_value("tax_free_services", 0);
+                    frm.set_value("revenue_abroad", 0);
+                    frm.set_value("transfers", 0);
+                    frm.set_value("non_taxable_services", 0);
+                    frm.set_value("losses", 0);
+                    frm.set_value("misc", 0);
+                    frm.set_value("additional_amount", 0);
+                    frm.set_value("additional_tax", 0);
+                    frm.set_value("grants", 0);
+                    frm.set_value("donations", 0);
+                    if (frm.doc.vat_type.includes("effective")) {
+                        frm.set_value('non_taxable_revenue', res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);
 
-    frappe.call({
-        method: method,
-        args: {
-            start_date: frm.doc.start_date,
-            end_date: frm.doc.end_date,
-            company: frm.doc.company,
-            flat: frm.doc.vat_type.includes("flat rate")
-        },
-        callback: function(r) {
-            if (r.message) {
-                let res = r.message;
-                console.log(res);
-                frm.set_value('purchase_invoice_summary', res.summary_purchase_invoice)
-                frm.set_value('sales_invoice_summary', res.summary_sales_invoice)
-                frm.set_value('journal_entry_summary', res.summary_journal_entry)
-                frm.set_value('no_vat_summary', res.summary_no_vat)
-                let total = (res.net_sell.total_credit - res.net_sell.total_debit + res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);// - (res.net_purchase.total_debit - res.net_purchase.total_credit);
-                frm.set_value('total_revenue', total);
-                // get_total(frm, "viewVAT_205", 'non_taxable_revenue');
-                // Deductions
-                /*frm.set_value(frm, "viewVAT_220", 'tax_free_services',);
-                frm.set_value(frm, "viewVAT_221", 'revenue_abroad',);
-                frm.set_value(frm, "viewVAT_225", 'transfers',);
-                frm.set_value(frm, "viewVAT_230", 'non_taxable_services',);
-                frm.set_value(frm, "viewVAT_235", 'losses',);*/
-                // Tax calculation
-                frm.set_value("tax_free_services", 0 );
-                frm.set_value("revenue_abroad", 0 );
-                frm.set_value("transfers", 0 );
-                frm.set_value("non_taxable_services", 0 );
-                frm.set_value("losses", 0 );
-                frm.set_value("misc", 0 );
-                frm.set_value("additional_amount", 0 );
-                frm.set_value("additional_tax", 0 );
-                frm.set_value("grants", 0 );
-                frm.set_value("donations", 0 );
-                if (frm.doc.vat_type.includes("effective")) {
-                    frm.set_value('non_taxable_revenue', res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);
+                        frm.set_value('normal_tax', res.sums_by_tax_code['302'] ? (res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit) : 0);
+                        frm.set_value('reduced_tax', res.sums_by_tax_code['312'] ? (res.sums_by_tax_code['312'].total_credit - res.sums_by_tax_code['312'].total_debit) : 0);
+                        frm.set_value('lodging_tax', res.sums_by_tax_code['342'] ? (res.sums_by_tax_code['342'].total_credit - res.sums_by_tax_code['342'].total_debit) : 0);
+                        console.log(res.sums_by_tax_code['302'], res.sums_by_tax_code['312'], res.sums_by_tax_code['342'])
+                        console.log(res.sums_by_tax_code['302'].total_credit, res.sums_by_tax_code['302'].total_debit, res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit)
 
-                    frm.set_value('normal_tax', res.sums_by_tax_code['302'] ? (res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit) : 0);
-                    frm.set_value('reduced_tax', res.sums_by_tax_code['312'] ? (res.sums_by_tax_code['312'].total_credit - res.sums_by_tax_code['312'].total_debit) : 0);
-                    frm.set_value('lodging_tax', res.sums_by_tax_code['342'] ? (res.sums_by_tax_code['342'].total_credit - res.sums_by_tax_code['342'].total_debit) : 0);
-                    console.log(res.sums_by_tax_code['302'], res.sums_by_tax_code['312'], res.sums_by_tax_code['342'])
-                    console.log(res.sums_by_tax_code['302'].total_credit, res.sums_by_tax_code['302'].total_debit, res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit)
-
-                    // Pretaxes
-                    frm.set_value('pretax_material', res.sums_by_tax_code['400'] ? (res.sums_by_tax_code['400'].total_debit - res.sums_by_tax_code['400'].total_credit) : 0);
-                    frm.set_value('pretax_investments', res.sums_by_tax_code['405'] ? (res.sums_by_tax_code['405'].total_debit - res.sums_by_tax_code['405'].total_credit) : 0);
-                    frm.set_value('missing_pretax', res.sums_by_tax_code['410'] ? (res.sums_by_tax_code['410'].total_debit - res.sums_by_tax_code['410'].total_credit) : 0);
-                    frm.set_value('pretax_correction_mixed', res.sums_by_tax_code['415'] ? (res.sums_by_tax_code['415'].total_debit - res.sums_by_tax_code['415'].total_credit) : 0);
-                    frm.set_value('pretax_correction_other', res.sums_by_tax_code['420'] ? (res.sums_by_tax_code['420'].total_debit - res.sums_by_tax_code['420'].total_credit) : 0);
+                        // Pretaxes
+                        frm.set_value('pretax_material', res.sums_by_tax_code['400'] ? (res.sums_by_tax_code['400'].total_debit - res.sums_by_tax_code['400'].total_credit) : 0);
+                        frm.set_value('pretax_investments', res.sums_by_tax_code['405'] ? (res.sums_by_tax_code['405'].total_debit - res.sums_by_tax_code['405'].total_credit) : 0);
+                        frm.set_value('missing_pretax', res.sums_by_tax_code['410'] ? (res.sums_by_tax_code['410'].total_debit - res.sums_by_tax_code['410'].total_credit) : 0);
+                        frm.set_value('pretax_correction_mixed', res.sums_by_tax_code['415'] ? (res.sums_by_tax_code['415'].total_debit - res.sums_by_tax_code['415'].total_credit) : 0);
+                        frm.set_value('pretax_correction_other', res.sums_by_tax_code['420'] ? (res.sums_by_tax_code['420'].total_debit - res.sums_by_tax_code['420'].total_credit) : 0);
+                    } else {
+                        /*let sell_vat = {};
+                        let purchase_vat = {};
+                        sell_vat['credit'] = 0;
+                        sell_vat['debit'] = 0;
+                        purchase_vat['credit'] = 0;
+                        purchase_vat['debit'] = 0;
+                        Object.keys(res.sums_by_tax_code).forEach(function(key) {
+                            if(parseInt(key) >= 300 && parseInt(key) < 400) {
+                                sell_vat['credit'] += res.sums_by_tax_code[key].total_credit;
+                                sell_vat['debit'] += res.sums_by_tax_code[key].total_debit;
+                            }
+                            if(parseInt(key) >= 400 && parseInt(key) < 500) {
+                                purchase_vat['credit'] += res.sums_by_tax_code[key].total_credit;
+                                purchase_vat['debit'] += res.sums_by_tax_code[key].total_debit;
+                            }
+                        });*/
+                        frm.set_value('amount_1', total);
+                        frm.set_value('rate_2', 0);
+                        frm.set_value('amount_2', 0);
+                        //frm.set_value(frm, "viewVAT_322", 'amount_1',);
+                        //frm.set_value(frm, "viewVAT_332", 'amount_2',);
+                    }
+                    //frm.refresh_fields();
+                    setTimeout(function () {
+                        update_taxable_revenue(frm);
+                        update_payable_tax(frm);
+                        update_taxable_revenue(frm);
+                    }, 200);
                 }
-                else {
-                    /*let sell_vat = {};
-                    let purchase_vat = {};
-                    sell_vat['credit'] = 0;
-                    sell_vat['debit'] = 0;
-                    purchase_vat['credit'] = 0;
-                    purchase_vat['debit'] = 0;
-                    Object.keys(res.sums_by_tax_code).forEach(function(key) {
-                        if(parseInt(key) >= 300 && parseInt(key) < 400) {
-                            sell_vat['credit'] += res.sums_by_tax_code[key].total_credit;
-                            sell_vat['debit'] += res.sums_by_tax_code[key].total_debit;
-                        }
-                        if(parseInt(key) >= 400 && parseInt(key) < 500) {
-                            purchase_vat['credit'] += res.sums_by_tax_code[key].total_credit;
-                            purchase_vat['debit'] += res.sums_by_tax_code[key].total_debit;
-                        }
-                    });*/
-                    frm.set_value('amount_1', total);
-                    frm.set_value('rate_2', 0);
-                    frm.set_value('amount_2', 0);
-                    //frm.set_value(frm, "viewVAT_322", 'amount_1',);
-                    //frm.set_value(frm, "viewVAT_332", 'amount_2',);
-                }
-                //frm.refresh_fields();
-                setTimeout(function() {
-                    update_taxable_revenue(frm);
-                    update_payable_tax(frm);
-                    update_taxable_revenue(frm);
-                }, 200);
             }
-        }
+        });
     });
 }
 
@@ -243,7 +244,12 @@ function update_tax_or_amount(frm, concerned_tax, from_amount=false) {
             }
         }
         //frm.refresh_fields();
-        let total_taxes = (frm.get_field("normal_tax").value || 0) + (frm.get_field("reduced_tax").value || 0) + (frm.get_field("lodging_tax").value || 0) + (frm.get_field("tax_1").value || 0) + (frm.get_field("tax_2").value || 0) + (frm.get_field("additional_tax").value || 0);
+        let total_taxes = 0
+        if(frm.doc.vat_type.includes("flat rate")) {
+            total_taxes = (frm.get_field("tax_1").value || 0) + (frm.get_field("tax_2").value || 0) + (frm.get_field("additional_tax").value || 0);
+        } else {
+            total_taxes = (frm.get_field("normal_tax").value || 0) + (frm.get_field("reduced_tax").value || 0) + (frm.get_field("lodging_tax").value || 0)  + (frm.get_field("additional_tax").value || 0);
+        }
         frm.set_value('total_tax', total_taxes);
     }, 200);
 }
@@ -256,7 +262,12 @@ function update_tax_amounts(frm) {
     // saldo tax: rate on gross amount
     var tax_1 = frm.doc.amount_1  * (frm.doc.rate_1 / 100);
     var tax_2 = frm.doc.amount_2 * (frm.doc.rate_2 / 100);
-    var total_tax = normal_tax + reduced_tax + lodging_tax + tax_1 + tax_2 + frm.doc.additional_tax;
+    var total_tax = 0;
+    if(frm.doc.vat_type.includes("flat rate")) {
+        total_taxes = tax_1 + tax_2 + frm.doc.additional_tax;
+    } else {
+        total_tax = normal_tax + reduced_tax + lodging_tax + frm.doc.additional_tax;
+    }
     frm.set_value('normal_tax', normal_tax);
     frm.set_value('reduced_tax', reduced_tax);
     frm.set_value('lodging_tax', lodging_tax);
@@ -360,6 +371,23 @@ function update_payable_tax(frm) {
     }
 }
 
+frappe.ui.form.on('VAT Declaration', {
+    clear_all_except_four: function(frm) {
+        return new Promise((resolve) => {
+            ///var fields_to_keep = ['company', 'start_date', 'end_date', 'vat_type', 'rate_1', 'rate_2', 'normal_rate', 'reduced_rate', 'lodging_rate'];
+
+            $.each(frm.fields_dict, function(fieldname, field) {
+                if (['Currency', 'Table', 'Float'].includes(field.df.fieldtype)) { // If fieldname is not in the fields_to_keep list
+                    frm.set_value(fieldname, 0);
+                } else if(field.df.fieldtype == 'Table') {
+                    frm.set_value(fieldname, null);
+                }
+            });
+            resolve();
+        });
+    }
+});
+
 function download_transfer_file(frm) {
     frappe.call({
         'method': 'create_transfer_file',
@@ -368,9 +396,9 @@ function download_transfer_file(frm) {
             if (r.message) {
                 // prepare the xml file for download
                 download("estv.xml", r.message.content);
-            } 
+            }
         }
-     });   
+    });
 }
 
 function download(filename, content) {
