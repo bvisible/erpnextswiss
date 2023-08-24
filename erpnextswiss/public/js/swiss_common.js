@@ -121,7 +121,12 @@ function get_city_from_pincode(pincode, target_field, state_field="", country=nu
             },
             async: false,
             callback: function(response) {
-                var form = cur_frm || cur_dialog;
+                // Choose the right form context
+                var form = cur_frm;
+                if (cur_dialog && cur_dialog.fields_dict.city) {
+                    form = cur_dialog;
+                }
+
                 if (!form) return;
                 if (response.message && response.message.length > 0) {
                     if (response.message.length == 1) {
@@ -150,6 +155,7 @@ function get_city_from_pincode(pincode, target_field, state_field="", country=nu
                             ],
                             function(values){
                                 var city = values.city;
+                                console.log(city);
                                 form.set_value(target_field, city);
                                 if (state_field != "") {
                                     form.set_value(state_field, response.message[0].canton_code);
