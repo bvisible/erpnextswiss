@@ -155,6 +155,7 @@ function get_city_from_pincode(pincode, target_field, state_field="", country=nu
                             ],
                             function(values){
                                 var city = values.city;
+                                console.log(city);
                                 form.set_value(target_field, city);
                                 if (state_field != "") {
                                     form.set_value(state_field, response.message[0].canton_code);
