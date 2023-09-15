@@ -17,7 +17,7 @@ class LabelPrinter(Document):
 	pass
 
 # creates a pdf based on a label printer and a html content
-def create_pdf(label_printer, content):
+def create_pdf(label_printer, content, preview=False):
 	# create temporary file
 	fname = os.path.join("/tmp", "frappe-pdf-{0}.pdf".format(frappe.generate_hash()))
 
@@ -68,7 +68,8 @@ def create_pdf(label_printer, content):
 	<body>
 	</html>
 	""".format(content=content, css_content=css_content)
-
+	if preview:
+		return html_content
 	pdfkit.from_string(html_content, fname, options=options or {})
 
 	with open(fname, "rb") as fileobj:
@@ -101,14 +102,17 @@ def save_content_svg(content, label_reference, item):
 	return fname
 
 @frappe.whitelist()
-def generate_labels_for_products(label_details, selected_items):
+def generate_labels_for_products(label_details, selected_items, preview=False):
     label_details = json.loads(label_details)
     selected_items = json.loads(selected_items)
 
     pdfs = []
+    errors = []
+    html_preview = ""
 
     # get label printer details
     label_printer = frappe.get_doc("Label Printer", label_details.get("label_print"))
+    type = label_details.get("type")
 
     for item_name in selected_items:
         item_name = unquote(item_name)
@@ -118,22 +122,32 @@ def generate_labels_for_products(label_details, selected_items):
         barcode_value = item.item_code  # default to item_code
 
         # Check if the selected type is one of EAN13, EAN8, or UPC
-        if label_details.get("type") in ["EAN", "UPC"] and label_details.get("value") == "Item barcode (if empty, use Item code)":
+        if type in ["EAN", "EAN8", "EAN13", "UPC"] and label_details.get("value") == "Item barcode (if empty, use Item code)":
             if hasattr(item, "barcodes") and len(item.barcodes) > 0:
-                selected_type_entry = next((entry for entry in item.barcodes if entry.barcode_type == label_details.get("type")), None)
+                selected_type_entry = next((entry for entry in item.barcodes if entry.barcode_type in type), None)
                 if selected_type_entry:
                     barcode_value = selected_type_entry.barcode
                 else:
-                    raise ValueError(f"No suitable barcode found for item {item_name} for type {label_details.get('type')}")
-            else:
-                raise ValueError(f"No barcodes associated with item {item_name}")
+                    errors += [("Item {0} : No suitable barcode found for type {1}<br>".format(item_name, type))]
+                    continue
+                    #raise ValueError(f"No suitable barcode found for item {item_name} for type {label_details.get('type')}")
+            #else:
+                #raise ValueError(f"No barcodes associated with item {item_name}")
 
         # Check if the barcode_value is numeric and the chosen type is EAN13
-        if not barcode_value.isnumeric() and label_details.get("type") == "EAN":
-            raise ValueError("Unable to generate EAN13 barcode for non-numeric value: {}".format(barcode_value))
+        if not barcode_value.isnumeric() and "EAN" in type:
+            errors += [("Item {0} : Unable to generate EAN13 barcode for non-numeric value {1}<br>".format(item_name, barcode_value))]
+            continue
+            #raise ValueError("Unable to generate EAN13 barcode for non-numeric value: {}".format(barcode_value))
+        if "EAN" in type:
+            digits = int(type.replace("EAN", ""))
+            if digits and len(barcode_value) != digits:
+                errors += [("Item {0} : Unable to generate EAN barcode for value {1} with length {2}. Expected length: {3}<br>".format(item_name, barcode_value, len(barcode_value), digits))]
+                continue
+                #raise ValueError("Unable to generate EAN barcode for value {} with length {}. Expected length: {}".format(barcode_value, len(barcode_value), digits))
 
         # Generate barcode for the determined value
-        barcode_img = generate_barcode_or_qr(barcode_value, label_details.get("type"), label_details.get("bodebar_color"), label_details.get("codebar_height"), label_details.get("show_number"))
+        barcode_img = generate_barcode_or_qr(barcode_value, type, label_details.get("bodebar_color"), label_details.get("codebar_height"), label_details.get("show_number"))
         barcode_img_tag = '<img style="height:{}px;" src="data:image/png;base64, {}"/>'.format(label_details.get("codebar_height"), barcode_img)
 
         # Get the quantity of labels for this item
@@ -141,7 +155,7 @@ def generate_labels_for_products(label_details, selected_items):
 
         for _ in range(quantity):
             content = label_details.get("content")
-            content = content.replace("{price}", str(item.standard_rate) if item.standard_rate else "")
+            content = content.replace("{price}", "{:.2f}".format(item.standard_rate) if item.standard_rate else "")
             content = content.replace("{reference}", item.item_code if item.item_code else "")
             content = content.replace("{unit}", item.stock_uom if item.stock_uom else "")
             content = content.replace("{brand}", item.brand if item.brand else "")
@@ -151,19 +165,31 @@ def generate_labels_for_products(label_details, selected_items):
             content = barcode_img_tag + content
 
             # Use the existing create_pdf function to generate the label
-            pdf_content = create_pdf(label_printer, content)
-            pdfs.append(pdf_content)
-
+            if preview:
+                html_preview = create_pdf(label_printer, content, preview=True)
+                break
+            else:
+                pdf_content = create_pdf(label_printer, content)
+                pdfs.append(pdf_content)
+        if html_preview:
+            break
+    if preview:
+        return {"pdf": html_preview, "errors": errors}
     # Combine all the generated labels into a single PDF
-    combined_pdf_path = combine_pdfs(pdfs)
+    if len(pdfs) > 0:
+        combined_pdf_path = combine_pdfs(pdfs)
+    else:
+        combined_pdf_path = None
 
-    return combined_pdf_path
+    return {"pdf": combined_pdf_path, "errors": errors}
 
 def get_barcode(value, barcode_type, writer):
     """Renvoie un objet de code-barres basé sur le type fourni."""
 
     BARCODE_MAPPING = {
         "CODE128": Code128,
+        "EAN8": EAN8,
+        "EAN13": EAN13,
         "EAN": EAN13,
         "UPC": UPCA,
         "QR": "QR"  # ajouté pour la prise en charge du QR dans cette fonction
