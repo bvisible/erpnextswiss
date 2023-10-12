@@ -28,7 +28,7 @@ def parse_ubs(content, account, auto_submit=False):
             # skip line 0, it contains the column headers
             # collect each fields (separated by semicolon)
             fields = lines[i].split(';')
-           
+
             # get received amount, only continue if this has a value
             if len(fields) > 19:
                 received_amount = fields[19]
@@ -66,7 +66,7 @@ def parse_ubs(content, account, auto_submit=False):
                         if auto_submit:
                             new_payment_entry.submit()
                         new_payment_entries.append(inserted_payment_entry.name)
-        
+
         return new_payment_entries
     except IndexError:
         frappe.throw( _("Parsing error. Make sure the correct bank is selected.") )
@@ -81,14 +81,14 @@ def parse_zkb(content, account, auto_submit=False):
     # get default customer
     default_customer = get_default_customer()
     try:
-    #if True:
+        #if True:
         for i in range(1, len(lines)):
             #log("Reading {0} of {1} lines...".format(i, len(lines)))
             # skip line 0, it contains the column headers
             # collect each fields (separated by semicolon)
             fields = lines[i].split(';')
             #frappe.log_error("Reading {0} of {1} lines... ({2} fields)".format(i, len(lines), len(fields)))
-           
+
             # get received amount, only continue if this has a value
             if len(fields) > 10:
                 received_amount = fields[7]
@@ -137,7 +137,7 @@ def parse_zkb(content, account, auto_submit=False):
                         if auto_submit:
                             new_payment_entry.submit()
                         new_payment_entries.append(inserted_payment_entry.name)
-        
+
         return new_payment_entries
     except IndexError:
         frappe.throw( _("Parsing error. Make sure the correct bank is selected.") )
@@ -163,7 +163,7 @@ def parse_raiffeisen(content, account, auto_submit=False):
     # get default customer
     default_customer = get_default_customer()
     try:
-    #if True: # this is for detailed debug messages ;-)
+        #if True: # this is for detailed debug messages ;-)
         for i in range(1, len(lines)):
             #log("Reading {0} of {1} lines...".format(i, len(lines)))
             # skip line 0, it contains the column headers
@@ -188,7 +188,7 @@ def parse_raiffeisen(content, account, auto_submit=False):
                                 remarks = None
                         except:
                             remarks = None
-                        
+
                         #log("Checking transaction {0}".format(transaction_id))
                         # cross-check if this transaction was already recorded
                         if not frappe.db.exists('Payment Entry', {'reference_no': transaction_id}):
@@ -221,11 +221,11 @@ def parse_raiffeisen(content, account, auto_submit=False):
                             if auto_submit:
                                 new_payment_entry.submit()
                             new_payment_entries.append(inserted_payment_entry.name)
-        
+
         return new_payment_entries
     except IndexError:
         frappe.throw( _("Parsing error. Make sure the correct bank is selected.") )
-        
+
 def parse_cs(content, account, auto_submit=False):
     # parse a credit suisse bank extract csv
     # collect all lines of the file
@@ -239,7 +239,7 @@ def parse_cs(content, account, auto_submit=False):
             # skip line 0, it contains the column headers
             # collect each fields (separated by semicolon)
             fields = lines[i].split(';')
-           
+
             # get received amount, only continue if this has a value
             if len(fields) > 5:
                 received_amount = fields[3]
@@ -275,7 +275,7 @@ def parse_cs(content, account, auto_submit=False):
                         if auto_submit:
                             new_payment_entry.submit()
                         new_payment_entries.append(inserted_payment_entry.name)
-        
+
         return new_payment_entries
     except IndexError:
         frappe.throw( _("Parsing error. Make sure the correct bank is selected.") )
@@ -284,7 +284,7 @@ def parse_migrosbank(content, account, auto_submit=False):
     # parse a migrosbank bank extract csv
     # collect all lines of the file
     lines = content.split("\n")
-    
+
     # collect created payment entries
     new_payment_entries = []
     # get default customer
@@ -294,7 +294,7 @@ def parse_migrosbank(content, account, auto_submit=False):
             # skip line 0..11, it contains account information the column headers
             # collect each fields (separated by semicolon)
             fields = lines[i].split(';')
-            
+
             # get received amount, only continue if this has a value
             if len(fields) > 3:
                 received_amount = float(fields[2])
@@ -322,7 +322,7 @@ def parse_migrosbank(content, account, auto_submit=False):
                         if auto_submit:
                             new_payment_entry.submit()
                         new_payment_entries.append(inserted_payment_entry.name)
-        
+
         return new_payment_entries
     except IndexError:
         frappe.throw( _("Parsing error. Make sure the correct bank is selected.") )
@@ -354,7 +354,7 @@ def parse_voba(content, account, auto_submit=False):
     # get default customer
     default_customer = get_default_customer()
     try:
-    # if True: # this is for detailed debug messages ;-)
+        # if True: # this is for detailed debug messages ;-)
         for i in range(13, len(lines) - 4):
             #log("Reading {0} of {1} lines...".format(i, len(lines)))
             # skip line 0, it contains the column headers
@@ -438,7 +438,7 @@ def parse_ksk(content, account, auto_submit=False):
     # get default customer
     default_customer = get_default_customer()
     try:
-    # if True: # this is for detailed debug messages ;-)
+        # if True: # this is for detailed debug messages ;-)
         for i in range(1, len(lines)):
             #log("Reading {0} of {1} lines...".format(i, len(lines)))
             # skip line 0, it contains the column headers
@@ -497,8 +497,8 @@ def match_by_amount(amount):
     # get sales invoices
     sql_query = ("SELECT `name` " +
                 "FROM `tabSales Invoice` " +
-                "WHERE `docstatus` = 1 " + 
-                "AND `grand_total` = {0} ".format(amount) + 
+                "WHERE `docstatus` = 1 " +
+                "AND `grand_total` = {0} ".format(amount) +
                 "AND `status` != 'Paid'")
     open_sales_invoices = frappe.db.sql(sql_query, as_dict=True)
     if open_sales_invoices:
@@ -511,15 +511,15 @@ def match_by_amount(amount):
     else:
         # no open sales invoice with this amount found
         return None
-        
+
 # this function tries to match the comments to an open sales invoice
-# 
+#
 # returns the sales invoice reference (name sting) or None
 def match_by_comment(comment):
     # get sales invoices (submitted, not paid)
     sql_query = ("SELECT `name` " +
                 "FROM `tabSales Invoice` " +
-                "WHERE `docstatus` = 1 " + 
+                "WHERE `docstatus` = 1 " +
                 "AND `status` != 'Paid'")
     open_sales_invoices = frappe.db.sql(sql_query, as_dict=True)
     if open_sales_invoices:
@@ -537,11 +537,11 @@ def get_unpaid_sales_invoices_by_customer(customer):
     # get sales invoices (submitted, not paid)
     sql_query = ("SELECT `name` " +
                 "FROM `tabSales Invoice` " +
-                "WHERE `docstatus` = 1 " + 
+                "WHERE `docstatus` = 1 " +
                 "AND `customer` = '{0}' ".format(customer) +
                 "AND `status` != 'Paid'")
     open_sales_invoices = frappe.db.sql(sql_query, as_dict=True)
-    return open_sales_invoices   
+    return open_sales_invoices
 
 @frappe.whitelist()
 def get_deductions_or_loss():
@@ -567,13 +567,15 @@ def create_payment_entry(date, to_account, received_amount, transaction_id, tran
     if customer_name and customer_invoice and customer_invoice_amount == received_amount:
         auto_submit = True
 
-    active_payment_entry_calculation = frappe.get_value('ERPNextSwiss Settings', None, 'active_payment_entry_calculation')
+    active_payment_entry_calculation = frappe.db.get_single_value('ERPNextSwiss Settings', 'active_payment_entry_calculation')
     if active_payment_entry_calculation == 1:
         if charges is not None and charges > 0:
             # remove charges to received amount
             charges = float(charges)
             received_amount = float(received_amount)
             received_amount = received_amount - charges
+    else:
+        charges = 0.00
 
     if not frappe.db.exists('Payment Entry', {'reference_no': transaction_id}):
         # create new payment entry
@@ -615,7 +617,7 @@ def create_payment_entry(date, to_account, received_amount, transaction_id, tran
         return inserted_payment_entry
     else:
         return None
-    
+
 # creates the reference record in a payment entry
 def create_reference(payment_entry, sales_invoice):
     # create a new payment entry reference
@@ -632,13 +634,13 @@ def create_reference(payment_entry, sales_invoice):
         reference_entry.allocated_amount = reference_entry.outstanding_amount
     else:
         reference_entry.allocated_amount = paid_amount
-    reference_entry.insert();
+    reference_entry.insert()
     # update unallocated amount
     payment_record = frappe.get_doc("Payment Entry", payment_entry)
     payment_record.unallocated_amount -= reference_entry.allocated_amount
     payment_record.save()
     return
-    
+
 def log(comment):
     new_comment = frappe.get_doc({"doctype": "Log"})
     new_comment.comment = comment
@@ -651,10 +653,10 @@ def assert_bool(param):
     if result == 'false':
         result = False
     elif result == 'true':
-        result = True     
-    return result  
+        result = True
+    return result
 
-# convert a European/Swiss date format DD.MM.YYYY into UNC YYYY-MM-DD         
+# convert a European/Swiss date format DD.MM.YYYY into UNC YYYY-MM-DD
 def convert_to_unc(ch_date):
     # check if is really .-separated (see bugfix #11)
     if '.' in ch_date:
@@ -728,31 +730,31 @@ def parse_file(content, bank, account, auto_submit=False, debug=False):
     message = "Completed"
     if len(new_records) == 0:
         if not debug: message = "No new transactions found"
-        
+
     if not debug:
         return { "message": message, "records": new_records }
     else:
         return { "message": "Debug Completed", "records": new_records }
 
 # this function tries to process the content by csv template information
-# 
+#
 # returns the payment entries as list or None
 @frappe.whitelist()
 def parse_by_template(content, bank, account, auto_submit=False, debug=False):
     # load csv template information
     template = frappe.get_doc("BankImport Template",bank)
-    
+
     # collect all lines of the file
     if six.PY2:
         content = (b""+ content).decode(template.file_encoding)
-    
+
     # collect created payment entries
     new_payment_entries = []
     # get default customer
     default_customer = get_default_customer()
-    
+
     # this function tries to get docitem value by name
-    # 
+    #
     # returns the value as string, int or None
     # string escape chars are removed
     def getFieldDefinition(docItemName, template=template):
@@ -776,7 +778,7 @@ def parse_by_template(content, bank, account, auto_submit=False, debug=False):
             return value
     # this function checks the available field properties and process them
     # accordingly
-    # 
+    #
     # returns the value as string. Rise an error if field is required
     def getProcessedValue(fieldname, field_definition, fields):
         # Check if field index is defined
@@ -804,7 +806,7 @@ def parse_by_template(content, bank, account, auto_submit=False, debug=False):
             return ""
         else:
             frappe.throw(_("Undefined condition for '{0}'").format(fieldname))
-    
+
     # collect field mapping information from 'BankImport Template'
     field_definitions = {
         'BOOKED_AT' :
@@ -831,7 +833,7 @@ def parse_by_template(content, bank, account, auto_submit=False, debug=False):
             #Process each content replacement item
             for item in template.content_regex:
                 content = tpl_regex_replace(item.reg_match, item.reg_sub, content, item.titel)
-    
+
     # Split content lines
     try:
         if six.PY2:
@@ -852,7 +854,7 @@ def parse_by_template(content, bank, account, auto_submit=False, debug=False):
                     #Process each line replacement item
                     for item in template.line_regex:
                         lines[i] = tpl_regex_replace(item.reg_match, item.reg_sub, lines[i], item.titel)
-                        
+
             # Split fields by delimiter
             if six.PY2:
                 fields = lines[i].split(template.delimiter.decode("unicode_escape"))
@@ -880,7 +882,7 @@ def parse_by_template(content, bank, account, auto_submit=False, debug=False):
                     if validationField:
                         # Get function from operator module and run validation
                         if not getattr(operator, template.valid_operator)(fields[validationField], template.valid_value):
-                            if debug: 
+                            if debug:
                                 frappe.msgprint(_("Line not valid. Field value '{0}' and '{1}' with operator '{2}' evaluates false").format(
                                     fields[validationField],
                                     template.valid_value,
@@ -896,11 +898,11 @@ def parse_by_template(content, bank, account, auto_submit=False, debug=False):
                         # Assign empty string to amount seperators (can be None if template is imported)
                         if template.k_separator:
                             k_separator = template.k_separator
-                        else: 
+                        else:
                             k_separator = "'"
                         if template.decimal_separator:
                             decimal_separator = template.decimal_separator
-                        else: 
+                        else:
                             decimal_separator = "."
                         received_amount = float(amount.replace(k_separator,"").replace(decimal_separator,"."))
                     except Exception as e:
@@ -914,20 +916,20 @@ def parse_by_template(content, bank, account, auto_submit=False, debug=False):
                             # Use 'booked_at' because valuta did not evaluate
                             valuta = booked_at
                         customerMapping = getProcessedValue("CUSTOMER",field_definitions["CUSTOMER"], fields)
-                        
+
                         # If specified use hash as reference instead of ref field
                         if template.transaction_hash == 1:
                             source = "{0}:{1}:{2}".format(booked_at, received_amount, customerMapping).encode('utf-8')
                             transaction_id = hashlib.md5(source).hexdigest()
                         else:
                             transaction_id = getProcessedValue("TRANSACTION",field_definitions["TRANSACTION"], fields)
-                        
+
                         # Check if payment already exist
                         if not frappe.db.exists('Payment Entry', {'reference_no': transaction_id}) or debug:
                             new_payment_entry = frappe.get_doc({'doctype': 'Payment Entry'})
                             new_payment_entry.payment_type = "Receive"
                             new_payment_entry.party_type = "Customer";
-                            
+
                             # Try to match customer field with existing customer
                             customer = frappe.get_value('Customer', customerMapping, 'name')
                             if customer:
@@ -943,7 +945,7 @@ def parse_by_template(content, bank, account, auto_submit=False, debug=False):
                             new_payment_entry.reference_date = valuta
                             new_payment_entry.iban = getProcessedValue("IBAN",field_definitions["IBAN"], fields)
                             new_payment_entry.bic = getProcessedValue("BIC",field_definitions["BIC"], fields)
-                            
+
                             # If remark field is not defined or cannot be found use whole line
                             remark = getProcessedValue("REMARK",field_definitions["REMARK"], fields)
                             if remark:
@@ -994,7 +996,7 @@ def re_sub(pattern, replacement, string):
         # Python has a "feature" where unmatched groups return None
         # then re.sub chokes on this.
         # see http://bugs.python.org/issue1519638
-        
+
         # this works around and hooks into the internal of the re module...
 
         # the match object is replaced with a wrapper that
@@ -1008,17 +1010,17 @@ def re_sub(pattern, replacement, string):
                 return m.group(n) or ""
 
         return re._expand(pattern, _m(m), replacement)
-    
+
     return re.sub(pattern, _r, string)
-    
+
 @frappe.whitelist()
 def get_bank_accounts():
     accounts = frappe.get_list('Account', filters={'account_type': 'Bank', 'is_group': 0}, fields=['name'])
     selectable_accounts = []
     for account in accounts:
-        selectable_accounts.append(account.name)    
-    
-    # frappe.throw(selectable_accounts)
+        selectable_accounts.append(account.name)
+
+        # frappe.throw(selectable_accounts)
     return {'accounts': selectable_accounts }
 
 @frappe.whitelist()
@@ -1026,7 +1028,7 @@ def read_camt053(content, bank, account, auto_submit=False):
     #read_camt_transactions_re(content)
     #doc = xmltodict.parse(content)
     soup = BeautifulSoup(content, 'lxml')
-    
+
     # general information
     try:
         #iban = doc['Document']['BkToCstmrStmt']['Stmt']['Acct']['Id']['IBAN']
@@ -1034,16 +1036,16 @@ def read_camt053(content, bank, account, auto_submit=False):
     except:
         # node not found, probably wrong format
         return { "message": _("Unable to read structure. Please make sure that you have selected the correct format."), "records": None }
-            
+
     # transactions
     #new_payment_entries = read_camt_transactions(doc['Document']['BkToCstmrStmt']['Stmt']['Ntry'], bank, account, auto_submit)
     entries = soup.find_all('ntry')
     new_payment_entries = read_camt_transactions(entries, bank, account, auto_submit)
-    
+
     message = _("Successfully imported {0} payments.".format(len(new_payment_entries)))
-    
-    return { "message": message, "records": new_payment_entries } 
-    
+
+    return { "message": message, "records": new_payment_entries }
+
 @frappe.whitelist()
 def read_camt054(content, bank, account, auto_submit=False):
     soup = BeautifulSoup(content, 'lxml')
@@ -1054,11 +1056,11 @@ def read_camt054(content, bank, account, auto_submit=False):
     except:
         # node not found, probably wrong format
         return { "message": _("Unable to read structure. Please make sure that you have selected the correct format."), "records": None }
-        
+
     # transactions
     new_payment_entries = read_camt_transactions(soup.find_all('ntry'), bank, account, auto_submit)
     message = _("Successfully imported {0} payments.".format(len(new_payment_entries)))
-    
+
     return { "message": message, "records": new_payment_entries }
 
 @frappe.whitelist()
@@ -1101,9 +1103,67 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                 amount = float(transaction_soup.amt.get_text())
                 currency = transaction_soup.amt['ccy']
                 try:
-                    party_soup = BeautifulSoup(six.text_type(transaction_soup.dbtr), 'lxml')
-                    customer_name = party_soup.nm.get_text()
+                    xml_paths_dbtr = ['dbtr', 'dbtr.pty', 'rltdpties.dbtr', 'rltdpties.dbtr.pty']
+                    xml_paths_ultmtdbtr = ['ultmtdbtr', 'ultmtdbtr.pty', 'rltdpties.ultmtdbtr', 'rltdpties.ultmtdbtr.pty']
+                    for path in xml_paths_dbtr:
+                        try:
+                            # Split the path and find nested tags
+                            tags = path.split('.')
+                            partial_soup = transaction_soup
+                            for tag in tags:
+                                partial_soup = partial_soup.find(tag)
+                                if partial_soup is None:
+                                    raise ValueError("Tag not found")
+                            party_soup = partial_soup
+                            if party_soup:
+                                break
+                        except Exception as e:
+                            pass
+                    for path in xml_paths_ultmtdbtr:
+                        try:
+                            # Split the path and find nested tags
+                            tags = path.split('.')
+                            partial_soup_ultimate = transaction_soup
+                            for tag in tags:
+                                partial_soup_ultimate = partial_soup_ultimate.find(tag)
+                                if partial_soup_ultimate is None:
+                                    raise ValueError("Tag not found")
+                            party_soup_ultimate = partial_soup_ultimate
+                            if party_soup_ultimate:
+                                break
+                        except Exception as e:
+                            pass
+                    #party_soup = BeautifulSoup(six.text_type(transaction_soup.dbtr), 'lxml')
+                    if not party_soup and not party_soup_ultimate:
+                        raise ValueError("Party not found")
+
                     try:
+                        customer_name = party_soup.nm.get_text()
+                    except:
+                        try:
+                            customer_name = party_soup_ultimate.nm.get_text()
+                        except:
+                            customer_name = ""
+
+                    try:
+                        street = party_soup.strtnm.get_text()
+                    except:
+                        try:
+                            street = party_soup_ultimate.strtnm.get_text()
+                        except:
+                            street = ""
+                    if street:
+                        try:
+                            street_number = party_soup.bldgnb.get_text()
+                        except:
+                            try:
+                                street_number = party_soup_ultimate.bldgnb.get_text()
+                            except:
+                                street_number = ""
+                        address_line = "{0} {1}".format(street, street_number) if street_number else street
+                    else:
+                        address_line = ""
+                    '''try:
                         street = party_soup.strtnm.get_text()
                         try:
                             street_number = party_soup.bldgnb.get_text()
@@ -1116,11 +1176,19 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                     try:
                         plz = party_soup.pstcd.get_text()
                     except:
-                        plz = ""
+                        try:
+                            plz = party_soup_ultimate.pstcd.get_text()
+                        except:
+                            plz = ""
+
                     try:
                         town = party_soup.twnnm.get_text()
                     except:
-                        town = ""
+                        try:
+                            town = party_soup_ultimate.twnnm.get_text()
+                        except:
+                            town = ""
+
                     try:
                         country = party_soup.ctry.get_text()
                     except:
@@ -1132,7 +1200,7 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                         customer_iban = ""
                 except:
                     # CRDT: use RltdPties:Dbtr
-                    #party_soup = BeautifulSoup(str(transaction_soup.txdtls.rltdpties.dbtr)) 
+                    #party_soup = BeautifulSoup(str(transaction_soup.txdtls.rltdpties.dbtr))
                     try:
                         customer_iban = transaction_soup.dbtracct.id.iban.get_text()
                     except Exception as e:
