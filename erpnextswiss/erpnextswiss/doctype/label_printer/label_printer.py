@@ -12,6 +12,8 @@ from barcode.writer import ImageWriter
 import base64
 from barcode import get_barcode_class
 from urllib.parse import unquote
+from erpnext.utilities.product import get_price
+from datetime import datetime
 
 class LabelPrinter(Document):
 	pass
@@ -154,8 +156,41 @@ def generate_labels_for_products(label_details, selected_items, preview=False):
         quantity = int(label_details.get("label_quantity", 1))
 
         for _ in range(quantity):
+            item_pricing = get_price(item.item_code, label_details.get("price_list"), label_details.get("customer_group"), label_details.get("company"), qty=1)
+            price = ''
+            promo_price = ''
+            promo_from = ''
+            promo_to = ''
+            if item_pricing:
+                price = item_pricing.get('formatted_mrp').replace("'", '') if item_pricing.get('formatted_mrp') else item_pricing.get('formatted_price').replace("'", '')
+                promo_price = item_pricing.get('formatted_price').replace("'", '') if item_pricing.get('formatted_mrp') else ''
+                promo_from = item_pricing.get('valid_from') if item_pricing and item_pricing.get('valid_from') else ''
+                promo_to = item_pricing.get('valid_upto') if item_pricing and item_pricing.get('valid_upto') else ''
             content = label_details.get("content")
-            content = content.replace("{price}", "{:.2f}".format(item.standard_rate) if item.standard_rate else "")
+            if '{promo_price}' in content:
+                if '{price}' in content:
+                    if promo_price and promo_price != price:
+                        content = content.replace("{promo_price}", promo_price)
+                    else:
+                        content = content.replace("{promo_price}", "")
+                else:
+                    content = content.replace("{promo_price}", promo_price)
+            if '{promo_from}' in content and promo_price and promo_price != price:
+                date_from = promo_from.split(" ")[0]
+                date_from = datetime.strptime(date_from, "%Y-%m-%d")
+                date_from = date_from.strftime("%d-%m-%Y")
+                content = content.replace("{promo_from}",date_from)
+            else:
+                content = content.replace("{promo_from}", "")
+            if '{promo_to}' in content and promo_price and promo_price != price:
+                date_to = promo_from.split(" ")[0]
+                date_to = datetime.strptime(date_to, "%Y-%m-%d")
+                date_to = date_to.strftime("%d-%m-%Y")
+                content = content.replace("{promo_to}", date_to)
+            else:
+                content = content.replace("{promo_to}", "")
+            content = content.replace("{price}", price)
+            #content = content.replace("{price}", "{:.2f}".format(item.standard_rate) if item.standard_rate else "")
             content = content.replace("{reference}", item.item_code if item.item_code else "")
             content = content.replace("{unit}", item.stock_uom if item.stock_uom else "")
             content = content.replace("{brand}", item.brand if item.brand else "")
@@ -226,7 +261,6 @@ def generate_barcode_or_qr(value, type, color, height, show_number=True):
         writer.font_size = 0
 
     barcode_obj = get_barcode(value, type, writer)
-    
     if type == "QR":
         return barcode_obj  # C'est déjà une chaîne base64 pour le QR
 
@@ -246,7 +280,7 @@ def combine_pdfs(pdfs):
         # Convertir le contenu PDF en un objet BytesIO
         if not isinstance(pdf, (BytesIO, IOBase)):
             pdf = BytesIO(pdf)
-    
+
         merger.append(pdf)
 
     # Définissez le chemin où vous souhaitez enregistrer le fichier PDF combiné

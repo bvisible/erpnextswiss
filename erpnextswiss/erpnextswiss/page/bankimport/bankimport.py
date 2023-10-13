@@ -1092,6 +1092,11 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
     for entry in transaction_entries:
         entry_soup = BeautifulSoup(six.text_type(entry), 'lxml')
         date = entry_soup.bookgdt.dt.get_text()
+        unique_reference = ""
+        try:
+            unique_reference = entry_soup.acctsvcrref.get_text()
+        except:
+            pass
         transactions = entry_soup.find_all('txdtls')
         # fetch entry amount as fallback
         entry_amount = float(entry_soup.amt.get_text())
@@ -1099,7 +1104,8 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
         for transaction in transactions:
             transaction_soup = BeautifulSoup(six.text_type(transaction), 'lxml')
             try:
-                unique_reference = transaction_soup.refs.acctsvcrref.get_text()
+                if not unique_reference:
+                    unique_reference = transaction_soup.refs.acctsvcrref.get_text()
                 amount = float(transaction_soup.amt.get_text())
                 currency = transaction_soup.amt['ccy']
                 try:
