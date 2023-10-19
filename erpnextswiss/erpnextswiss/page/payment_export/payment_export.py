@@ -28,6 +28,14 @@ def generate_payment_file(payments):
         # remove empty items in case there should be any (bigfix for issue #2)
         payments = list(filter(None, payments))
 
+        payment_details = frappe.db.get_all("Payment Entry", filters={"name": ["in", payments]}, fields=["name", "paid_from"])
+
+        # Sort the payment details by the entire payment_account string
+        sorted_payment_details = sorted(payment_details, key=lambda x: x['paid_from'])
+
+        # Extract the sorted payment names
+        sorted_payments = [entry['name'] for entry in sorted_payment_details]
+
         # array for skipped payments
         skipped = []
 
@@ -61,60 +69,65 @@ def generate_payment_file(payments):
 
         ### Payment Information (PmtInf, B-Level)
         # payment information records (1 .. 99'999)
-        for payment in payments:
+        actual_account = ""
+        for payment in sorted_payments:
             # create temporary code block to compile the payment record (only add to overall on submit)
             # use 'continue' to skip a record (in case a validation fails)
             payment_content = ""
             # retrieve the payment entry record
             payment_record = frappe.get_doc('Payment Entry', payment)
-            # create the payment entries
-            payment_content += make_line("    <PmtInf>")
-            # unique (in this file) identification for the payment ( e.g. PMTINF-01, PMTINF-PE-00005 )
-            payment_content += make_line("      <PmtInfId>PMTINF-" + payment + "</PmtInfId>")
-            # payment method (TRF or TRA, no impact in Switzerland)
-            payment_content += make_line("      <PmtMtd>TRF</PmtMtd>")
-            # batch booking (true or false; recommended true)
-            payment_content += make_line("      <BtchBookg>true</BtchBookg>")
-            # Requested Execution Date (e.g. 2010-02-22)
-            payment_content += make_line("      <ReqdExctnDt>{0}</ReqdExctnDt>".format(
-                payment_record.posting_date))
-            # debitor (technically ignored, but recommended)   
-            payment_content += make_line("      <Dbtr>")
-            # debitor name
-            payment_content += make_line("        <Nm>" +
-                html.escape(payment_record.company) + "</Nm>")
-            # postal address (recommendadtion: do not use)
-            #content += make_line("        <PstlAdr>")
-            #content += make_line("          <Ctry>CH</Ctry>")
-            #content += make_line("          <AdrLine>SELDWYLA</AdrLine>")
-            #content += make_line("        </PstlAdr>")
-            payment_content += make_line("      </Dbtr>")
-            # debitor account (sender) - IBAN
-            payment_account = frappe.get_doc('Account', payment_record.paid_from)
-            payment_content += make_line("      <DbtrAcct>")
-            payment_content += make_line("        <Id>")
-            if payment_account.iban:
-                payment_content += make_line("          <IBAN>{0}</IBAN>".format(
-                    payment_account.iban.replace(" ", "") ))
-            else:
-                # no paying account IBAN: not valid record, skip
-                content += add_invalid_remark( _("{0}: no account IBAN found ({1})".format(
-                    payment, payment_record.paid_from) ) )
-                skipped.append(payment)
-                continue
-            payment_content += make_line("        </Id>")
-            if payment_record.transaction_type == "IBAN":
-                payment_content += make_line("        <Tp>")
-                payment_content += make_line("          <Prtry>NOA</Prtry>")
-                payment_content += make_line("        </Tp>")
-            payment_content += make_line("      </DbtrAcct>")
-            if payment_account.bic:
-                # debitor agent (sender) - BIC
-                payment_content += make_line("      <DbtrAgt>")
-                payment_content += make_line("        <FinInstnId>")
-                payment_content += make_line("          <BIC>{0}</BIC>".format(payment_account.bic))
-                payment_content += make_line("        </FinInstnId>")
-                payment_content += make_line("      </DbtrAgt>")
+            if actual_account != "" and payment_record.paid_from != actual_account:
+                payment_content += make_line("      </PmtInf>")
+            if payment_record.paid_from != actual_account:
+                actual_account = payment_record.paid_from
+                # create the payment entries
+                payment_content += make_line("    <PmtInf>")
+                # unique (in this file) identification for the payment ( e.g. PMTINF-01, PMTINF-PE-00005 )
+                payment_content += make_line("      <PmtInfId>PMTINF-" + payment + "</PmtInfId>")
+                # payment method (TRF or TRA, no impact in Switzerland)
+                payment_content += make_line("      <PmtMtd>TRF</PmtMtd>")
+                # batch booking (true or false; recommended true)
+                payment_content += make_line("      <BtchBookg>true</BtchBookg>")
+                # Requested Execution Date (e.g. 2010-02-22)
+                payment_content += make_line("      <ReqdExctnDt>{0}</ReqdExctnDt>".format(
+                    payment_record.posting_date))
+                # debitor (technically ignored, but recommended)
+                payment_content += make_line("      <Dbtr>")
+                # debitor name
+                payment_content += make_line("        <Nm>" +
+                    html.escape(payment_record.company) + "</Nm>")
+                # postal address (recommendadtion: do not use)
+                #content += make_line("        <PstlAdr>")
+                #content += make_line("          <Ctry>CH</Ctry>")
+                #content += make_line("          <AdrLine>SELDWYLA</AdrLine>")
+                #content += make_line("        </PstlAdr>")
+                payment_content += make_line("      </Dbtr>")
+                # debitor account (sender) - IBAN
+                payment_account = frappe.get_doc('Account', payment_record.paid_from)
+                payment_content += make_line("      <DbtrAcct>")
+                payment_content += make_line("        <Id>")
+                if payment_account.iban:
+                    payment_content += make_line("          <IBAN>{0}</IBAN>".format(
+                        payment_account.iban.replace(" ", "") ))
+                else:
+                    # no paying account IBAN: not valid record, skip
+                    content += add_invalid_remark( _("{0}: no account IBAN found ({1})".format(
+                        payment, payment_record.paid_from) ) )
+                    skipped.append(payment)
+                    continue
+                payment_content += make_line("        </Id>")
+                if payment_record.transaction_type == "IBAN":
+                    payment_content += make_line("        <Tp>")
+                    payment_content += make_line("          <Prtry>NOA</Prtry>")
+                    payment_content += make_line("        </Tp>")
+                payment_content += make_line("      </DbtrAcct>")
+                if payment_account.bic:
+                    # debitor agent (sender) - BIC
+                    payment_content += make_line("      <DbtrAgt>")
+                    payment_content += make_line("        <FinInstnId>")
+                    payment_content += make_line("          <BIC>{0}</BIC>".format(payment_account.bic))
+                    payment_content += make_line("        </FinInstnId>")
+                    payment_content += make_line("      </DbtrAgt>")
 
             ### Credit Transfer Transaction Information (CdtTrfTxInf, C-Level)
             payment_content += make_line("      <CdtTrfTxInf>")
@@ -139,7 +152,7 @@ def generate_payment_file(payments):
                 # proprietary (nothing or CH01 for ESR)
                 payment_content += make_line("            <Prtry>CH01</Prtry>")
                 payment_content += make_line("          </LclInstrm>")
-            if payment_record.transaction_type == "QRR":
+            if payment_record.transaction_type == "QRR" or payment_record.transaction_type == "SCOR":
                 # proprietary (QRR)
                 payment_content += make_line("          <InstrPrty>NORM</InstrPrty>")
             if payment_record.transaction_type == "IBAN":
@@ -197,7 +210,7 @@ def generate_payment_file(payments):
                 payment_content += make_line("            </CdtrRefInf>")
                 payment_content += make_line("          </Strd>")
                 payment_content += make_line("        </RmtInf>")
-            elif payment_record.transaction_type == "QRR":
+            elif payment_record.transaction_type == "QRR" or payment_record.transaction_type == "SCOR":
                 # add creditor information
                 creditor_info = add_creditor_info(payment_record)
                 if creditor_info:
@@ -232,7 +245,10 @@ def generate_payment_file(payments):
                 if payment_record.esr_reference:
                     payment_content += make_line("              <Tp>")
                     payment_content += make_line("                <CdOrPrtry>")
-                    payment_content += make_line("                  <Prtry>QRR</Prtry>")
+                    if payment_record.transaction_type == "QRR":
+                        payment_content += make_line("                  <Prtry>QRR</Prtry>")
+                    elif payment_record.transaction_type == "SCOR":
+                        payment_content += make_line("                  <Cd>SCOR</Cd>")
                     payment_content += make_line("                </CdOrPrtry>")
                     payment_content += make_line("              </Tp>")
                     payment_content += make_line("              <Ref>" +
@@ -315,7 +331,7 @@ def generate_payment_file(payments):
 
             # close payment record
             payment_content += make_line("      </CdtTrfTxInf>")
-            payment_content += make_line("    </PmtInf>")
+            #payment_content += make_line("    </PmtInf>")
             # once the payment is extracted for payment, submit the record
             transaction_count += 1
             control_sum += payment_record.paid_amount
@@ -323,6 +339,7 @@ def generate_payment_file(payments):
             #////payment_record.submit()
             #payment_record.save()
         # add footer
+        content += make_line("    </PmtInf>")
         content += make_line("  </CstmrCdtTrfInitn>")
         content += make_line("</Document>")
         # insert control numbers
@@ -385,9 +402,11 @@ def add_creditor_info(payment_record):
         return None
     payment_content += make_line("          <PstlAdr>")
     # street name
-    payment_content += make_line("            <StrtNm>" + street + "</StrtNm>")
+    if street:
+        payment_content += make_line("            <StrtNm>" + street + "</StrtNm>")
     # building number
-    payment_content += make_line("            <BldgNb>" + building + "</BldgNb>")
+    if building and street:
+        payment_content += make_line("            <BldgNb>" + building + "</BldgNb>")
     # postal code
     payment_content += make_line("            <PstCd>{0}</PstCd>".format(plz))
     # town name

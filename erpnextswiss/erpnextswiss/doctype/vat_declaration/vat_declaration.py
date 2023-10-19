@@ -315,7 +315,7 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
             summary_no_vat.append(entry)
         # end journal entry summary
 
-    summary_journal_entry = sorted(summary_journal_entry, key=lambda x: x['date'])
+    summary_journal_entry = sorted(summary_journal_entry, key=lambda x: x['posting_date'])
     sum_dict = {}
     for d in summary_journal_entry:
         for key, value in d.items():
@@ -323,7 +323,7 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
                 sum_dict[key] = sum_dict.get(key, 0) + value
     summary_journal_entry.append(sum_dict)
 
-    summary_sales_invoice = sorted(summary_sales_invoice, key=lambda x: x['date'])
+    summary_sales_invoice = sorted(summary_sales_invoice, key=lambda x: x['posting_date'])
     sum_dict = {}
     for d in summary_sales_invoice:
         for key, value in d.items():
@@ -331,7 +331,7 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
                 sum_dict[key] = sum_dict.get(key, 0) + value
     summary_sales_invoice.append(sum_dict)
 
-    summary_purchase_invoice = sorted(summary_purchase_invoice, key=lambda x: x['date'])
+    summary_purchase_invoice = sorted(summary_purchase_invoice, key=lambda x: x['posting_date'])
     sum_dict = {}
     for d in summary_purchase_invoice:
         for key, value in d.items():
@@ -339,7 +339,7 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
                 sum_dict[key] = sum_dict.get(key, 0) + value
     summary_purchase_invoice.append(sum_dict)
 
-    summary_no_vat = sorted(summary_no_vat, key=lambda x: x['date'])
+    summary_no_vat = sorted(summary_no_vat, key=lambda x: x['posting_date'])
     sum_dict = {}
     for d in summary_no_vat:
         for key, value in d.items():

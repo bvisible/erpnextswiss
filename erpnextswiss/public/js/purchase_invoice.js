@@ -106,7 +106,16 @@ function scan_invoice_code(frm, default_settings) {
         {'fieldname': 'code_scan', 'fieldtype': 'Small Text', 'label': __('Code'), 'reqd': 1}
     ],
     function(values){
-        check_scan_input(frm, default_settings, values.code_scan);
+        //check_scan_input(frm, default_settings, values.code_scan);
+        frappe.call({
+            'method': "neoffice_theme.events.check_qr_invoice",
+            'args': {
+                'code_scan': values.code_scan
+            }
+        }).then(r => {
+            let [qr_type, amount, reference, participant, supplier_name, address, street_number, zip_code, city, country, supplier_exists] = r.message.split('|');
+            show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier_name, [], address, street_number, zip_code, city, country, supplier_name, qr_type, supplier_exists=="True");
+        })
     },
     scan_invoice_txt,
     __('OK')
@@ -338,11 +347,11 @@ function get_data_based_on_esr(frm, participant, reference, amount, default_sett
     });
 }
 
-function show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, supplier_list, address=null, street_number=null, zip=null, city=null, country=null, supplier_name=null, qr_type=null) {
+function show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier, supplier_list, address=null, street_number=null, zip=null, city=null, country=null, supplier_name=null, qr_type=null, supplier_exists=false) {
     //console.log("show_esr_detail_dialog");
     var field_list = [];
     //console.log(supplier);
-    if (supplier) {
+    if (supplier_exists) {
         if (!cur_frm.doc.supplier||cur_frm.doc.supplier == supplier) {
             var supplier_matched_txt = "<p style='color: green;'>" + __("Supplier matched") + "</p>";
             field_list.push({'fieldname': 'supplier', 'fieldtype': 'Link', 'label': __('Supplier'), 'reqd': 1, 'options': 'Supplier', 'default': supplier, 'description': supplier_matched_txt});
@@ -503,16 +512,38 @@ function fetch_esr_details_to_new_sinv(frm, values) {
             cur_frm.get_field("items").grid.grid_rows[i].remove();
         }
     }
-    cur_frm.set_value("supplier", values.supplier);
+    cur_frm.doc.supplier = values.supplier;
+    cur_frm.refresh_field("supplier");
     frappe.db.get_value("Supplier", values.supplier, "tax_category",(r) => {
         cur_frm.refresh_field('items');
         if(values.reference){
-            cur_frm.set_value("payment_type", 'QRR');
+            if(values.reference.includes("RF")) {
+                cur_frm.set_value("payment_type", 'SCOR');
+                cur_frm.set_value("bic", values.bic);
+                cur_frm.set_value("esr_participation_number", values.participant);
+            } else {
+                if(values.participant.charAt(4) == "3" && values.participant.charAt(0) == "C" && values.participant.charAt(1) == "H") {
+                    cur_frm.set_value("payment_type", 'QRR');
+                    cur_frm.set_value("esr_participation_number", values.participant);
+                } else {
+                    if(values.participant.charAt(0) == "C" && values.participant.charAt(1) == "H") {
+                        cur_frm.set_value("payment_type", 'IBAN');
+                        cur_frm.set_value("iban", values.iban);
+                    } else {
+                        cur_frm.set_value("payment_type", 'SEPA');
+                        cur_frm.set_value("iban", values.iban);
+                        cur_frm.set_value("bic", values.bic);
+                    }
+                }
+            }
             cur_frm.set_value("esr_reference_number", values.reference);
-            //cur_frm.set_value("bic", values.bic);
-            cur_frm.set_value("esr_participation_number", values.participant);
         } else {
-            cur_frm.set_value("payment_type", 'IBAN');
+            if(values.participant.charAt(0) == "C" && values.participant.charAt(1) == "H") {
+                cur_frm.set_value("payment_type", 'IBAN');
+            } else {
+                cur_frm.set_value("payment_type", 'SEPA');
+                cur_frm.set_value("bic", values.bic);
+            }
             cur_frm.set_value("iban", values.iban);
         }
 
