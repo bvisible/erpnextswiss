@@ -94,6 +94,7 @@
   {
    "fieldname": "highest_level",
    "fieldtype": "Int",
+   "in_list_view": 1,
    "label": "Highest Level"
   },
   {
@@ -115,6 +116,7 @@
   {
    "fieldname": "total_with_charge",
    "fieldtype": "Currency",
+   "in_list_view": 1,
    "label": "Total with Charge",
    "options": "currency"
   },
@@ -160,7 +162,8 @@
   }
  ],
  "is_submittable": 1,
- "modified": "2023-06-20 20:22:04.129616",
+ "links": [],
+ "modified": "2023-11-01 12:36:20.440450",
  "modified_by": "Administrator",
  "module": "ERPNextSwiss",
  "name": "Payment Reminder",
@@ -213,6 +216,8 @@
    "write": 1
   }
  ],
+ "read_only": 1,
+ "restrict_to_domain": "Gestion",
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
