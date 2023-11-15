@@ -1,16 +1,16 @@
 {
  "content": null,
- "creation": "2020-05-13 09:26:41.962912",
+ "creation": "2022-03-15 16:32:41.537052",
  "docstatus": 0,
  "doctype": "Page",
  "idx": 0,
- "modified": "2020-09-23 16:18:25.448378",
+ "modified": "2023-11-06 16:23:33.545459",
  "modified_by": "Administrator",
  "module": "ERPNextSwiss",
  "name": "bkp-importer",
  "owner": "Administrator",
- "page_name": "BKP Importer",
- "restrict_to_domain": "HLK",
+ "page_name": "bkp-importer",
+ "restrict_to_domain": "Gestion",
  "roles": [
   {
    "role": "System Manager"
