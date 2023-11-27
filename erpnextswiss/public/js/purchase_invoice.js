@@ -106,6 +106,7 @@ function scan_invoice_code(frm, default_settings) {
         {'fieldname': 'code_scan', 'fieldtype': 'Small Text', 'label': __('Code'), 'reqd': 1}
     ],
     function(values){
+        //console.log(values.code_scan);
         //check_scan_input(frm, default_settings, values.code_scan);
         frappe.call({
             'method': "neoffice_theme.events.check_qr_invoice",
@@ -113,6 +114,11 @@ function scan_invoice_code(frm, default_settings) {
                 'code_scan': values.code_scan
             }
         }).then(r => {
+            console.log(r.message);
+            if(r.message == "Error reading this QR Code"){
+                frappe.msgprint( __("Error reading this QR Codethis QR Code has a structural problem. It is impossible to extract the information.") ); 
+                frappe.validated=false;
+            }
             let [qr_type, amount, reference, participant, supplier_name, address, street_number, zip_code, city, country, supplier_exists] = r.message.split('|');
             show_esr_detail_dialog(frm, participant, reference, amount, default_settings, supplier_name, [], address, street_number, zip_code, city, country, supplier_name, qr_type, supplier_exists=="True");
         })
@@ -438,7 +444,7 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
     if (cur_frm.doc.grand_total > 0) {
         if (cur_frm.doc.grand_total != parseFloat(amount)) {
             var deviation = parseFloat(amount) - cur_frm.doc.grand_total;
-            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 0, 'default': parseFloat(amount)});
+            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('Amount'), 'read_only': 0, 'default': parseFloat(amount)});
             field_list.push({'fieldname': 'deviation', 'fieldtype': 'Currency', 'label': __('Amount Deviation'), 'read_only': 0, 'default': parseFloat(deviation)});
             if (deviation < 0) {
                 field_list.push({'fieldname': 'negative_deviation', 'fieldtype': 'Check', 'label': __('Add negative deviation as discount'), 'default': default_settings.negative_deviation});
@@ -447,14 +453,14 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
                 field_list.push({'fieldname': 'positive_deviation_item', 'fieldtype': 'Link', 'options': 'Item', 'label': __('Positive Deviation Item'), 'default': default_settings.positive_deviation_item});
             }
         } else {
-            var esr_amount_matched_txt = "<p style='color: green;'>" + __("ESR / Invoice amount matched") + "</p>";
-            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 0, 'default': parseFloat(amount), 'description': esr_amount_matched_txt});
+            var esr_amount_matched_txt = "<p style='color: green;'>" + __("Invoice amount matched") + "</p>";
+            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('Amount'), 'read_only': 0, 'default': parseFloat(amount), 'description': esr_amount_matched_txt});
         }
     } else {
         if(qr_type == "IBAN"){
             field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('Amount'), 'read_only': 0, 'default': parseFloat(amount)});
         } else {
-            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('ESR Amount'), 'read_only': 0, 'default': parseFloat(amount)});
+            field_list.push({'fieldname': 'amount', 'fieldtype': 'Currency', 'label': __('Amount'), 'read_only': 0, 'default': parseFloat(amount)});
         }
         field_list.push({'fieldname': 'default_item', 'fieldtype': 'Link', 'options': 'Item', 'label': __('Default Item'), 'default': default_settings.default_item});
     }
@@ -464,8 +470,8 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
     if(qr_type == "IBAN"){
         field_list.push({'fieldname': 'iban', 'fieldtype': 'Data', 'label': __('IBAN'), 'read_only': 1, 'default': participant});
     } else {
-        field_list.push({'fieldname': 'reference', 'fieldtype': 'Data', 'label': __('ESR Reference'), 'read_only': 1, 'default': reference});
-        field_list.push({'fieldname': 'participant', 'fieldtype': 'Data', 'label': __('ESR Participant'), 'read_only': 1, 'default': participant});
+        field_list.push({'fieldname': 'reference', 'fieldtype': 'Data', 'label': __('Reference'), 'read_only': 0, 'default': reference});
+        field_list.push({'fieldname': 'participant', 'fieldtype': 'Data', 'label': __('Participant'), 'read_only': 0, 'default': participant});
     }
 
     field_list.push({'fieldname': 'cost_center', 'fieldtype': 'Link', 'label': __('Cost Center'), 'options': "Cost Center", 'default': locals[":Company"][frappe.defaults.get_user_default("company")]['cost_center'] });
@@ -496,7 +502,7 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
             fetch_esr_details_to_existing_sinv(frm, values);
         }
     },
-    __('ESR Details'),
+    __('Details'),
     __('Process')
     )
 }
