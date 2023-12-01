@@ -487,6 +487,8 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
         });
     }, 1000);
 
+    field_list.push({'fieldname': 'customer_reference', 'fieldtype': 'Data', 'label': __('Supplier reference'), 'read_only': 0});
+
     frappe.prompt(field_list,
     function(values){
         if (supplier_list.length > 0) {
@@ -556,6 +558,7 @@ function fetch_esr_details_to_new_sinv(frm, values) {
         cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
         cur_frm.set_value("tax_category", r.tax_category);
         cur_frm.set_value("set_posting_time", 1);
+        cur_frm.set_value("customer_reference", values.customer_reference);
         setTimeout(() => {
             cur_frm.set_value("posting_date", values.posting_date);
         }, 100);
@@ -595,6 +598,7 @@ function fetch_esr_details_to_existing_sinv(frm, values) {
         cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);
         cur_frm.set_value("tax_category", r.tax_category);
         cur_frm.set_value("posting_date", values.posting_date);
+        cur_frm.set_value("customer_reference", values.customer_reference);
 
         if (values.negative_deviation) {
             cur_frm.set_value("apply_discount_on", 'Grand Total');
