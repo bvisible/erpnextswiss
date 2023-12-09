@@ -1178,7 +1178,7 @@ def read_camt_transactions(transaction_entries, bank, account, auto_submit=False
                             address_line = street
 
                     except:
-                        address_line = ""
+                        address_line = ""'''
                     try:
                         plz = party_soup.pstcd.get_text()
                     except:
