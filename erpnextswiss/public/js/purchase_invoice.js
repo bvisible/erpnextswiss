@@ -530,29 +530,38 @@ function fetch_esr_details_to_new_sinv(frm, values) {
                 cur_frm.set_value("bic", values.bic);
                 cur_frm.set_value("esr_participation_number", values.participant);
             } else {
-                if(values.participant.charAt(4) == "3" && values.participant.charAt(0) == "C" && values.participant.charAt(1) == "H") {
-                    cur_frm.set_value("payment_type", 'QRR');
-                    cur_frm.set_value("esr_participation_number", values.participant);
-                } else {
-                    if(values.participant.charAt(0) == "C" && values.participant.charAt(1) == "H") {
-                        cur_frm.set_value("payment_type", 'IBAN');
-                        cur_frm.set_value("iban", values.iban);
+                // check if values.participant is note empty
+                if(values.participant){
+                    if(values.participant.charAt(4) == "3" && values.participant.charAt(0) == "C" && values.participant.charAt(1) == "H") {
+                        cur_frm.set_value("payment_type", 'QRR');
+                        cur_frm.set_value("esr_participation_number", values.participant);
                     } else {
-                        cur_frm.set_value("payment_type", 'SEPA');
-                        cur_frm.set_value("iban", values.iban);
-                        cur_frm.set_value("bic", values.bic);
+                        if(values.participant.charAt(0) == "C" && values.participant.charAt(1) == "H") {
+                            cur_frm.set_value("payment_type", 'IBAN');
+                            cur_frm.set_value("iban", values.iban);
+                        } else {
+                            cur_frm.set_value("payment_type", 'SEPA');
+                            cur_frm.set_value("iban", values.iban);
+                            cur_frm.set_value("bic", values.bic);
+                        }
                     }
                 }
             }
-            cur_frm.set_value("esr_reference_number", values.reference);
-        } else {
-            if(values.participant.charAt(0) == "C" && values.participant.charAt(1) == "H") {
-                cur_frm.set_value("payment_type", 'IBAN');
-            } else {
-                cur_frm.set_value("payment_type", 'SEPA');
-                cur_frm.set_value("bic", values.bic);
+            if(values.reference){
+                cur_frm.set_value("esr_reference_number", values.reference);
             }
-            cur_frm.set_value("iban", values.iban);
+        } else {
+            if(values.participant){
+                if(values.participant.charAt(0) == "C" && values.participant.charAt(1) == "H") {
+                    cur_frm.set_value("payment_type", 'IBAN');
+                } else {
+                    cur_frm.set_value("payment_type", 'SEPA');
+                    cur_frm.set_value("bic", values.bic);
+                }
+            }
+            if(values.iban){
+                cur_frm.set_value("iban", values.iban);
+            }
         }
 
         cur_frm.set_value("taxes_and_charges", cur_frm.doc.taxes_and_charges);

@@ -1,4 +1,5 @@
 {
+ "actions": [],
  "allow_rename": 1,
  "autoname": "field:title",
  "creation": "2018-01-03 22:22:53.439217",
@@ -29,6 +30,13 @@
   "total_deductions",
   "taxable_revenue",
   "section_tax_calculation",
+  "normal_amount_2023",
+  "reduced_amount_2023",
+  "lodging_amount_2023",
+  "amount_1_2023",
+  "amount_2_2023",
+  "additional_amount_2023",
+  "html_tive",
   "normal_amount",
   "reduced_amount",
   "lodging_amount",
@@ -36,12 +44,26 @@
   "amount_2",
   "additional_amount",
   "column_break_3",
+  "normal_rate_2023",
+  "reduced_rate_2023",
+  "lodging_rate_2023",
+  "rate_1_2023",
+  "rate_2_2023",
+  "html_oorx",
+  "html_hinu",
   "normal_rate",
   "reduced_rate",
   "lodging_rate",
   "rate_1",
   "rate_2",
   "column_break_4",
+  "normal_tax_2023",
+  "reduced_tax_2023",
+  "lodging_tax_2023",
+  "tax_1_2023",
+  "tax_2_2023",
+  "additional_tax_2023",
+  "html_dxnx",
   "normal_tax",
   "reduced_tax",
   "lodging_tax",
@@ -191,41 +213,41 @@
    "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
    "fieldname": "normal_amount",
    "fieldtype": "Float",
-   "label": "Normal (302)",
+   "label": "Normal (303)",
    "precision": "2"
   },
   {
    "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
    "fieldname": "reduced_amount",
    "fieldtype": "Float",
-   "label": "Reduced (312)",
+   "label": "Reduced (313)",
    "precision": "2"
   },
   {
    "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
    "fieldname": "lodging_amount",
    "fieldtype": "Float",
-   "label": "Lodging (342)",
+   "label": "Lodging (343)",
    "precision": "2"
   },
   {
-   "depends_on": "eval:doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received'",
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date > '2023-12-31'",
    "fieldname": "amount_1",
    "fieldtype": "Float",
-   "label": "Amount 1 (322)",
+   "label": "Amount 1 (323)",
    "precision": "2"
   },
   {
-   "depends_on": "eval:doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received'",
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date > '2023-12-31'",
    "fieldname": "amount_2",
    "fieldtype": "Float",
-   "label": "Amount 2 (332)",
+   "label": "Amount 2 (333)",
    "precision": "2"
   },
   {
    "fieldname": "additional_amount",
    "fieldtype": "Float",
-   "label": "Additional (382)",
+   "label": "Additional (383)",
    "precision": "2"
   },
   {
@@ -251,66 +273,21 @@
    "label": "Lodging rate (%)"
   },
   {
-   "depends_on": "eval:doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received'",
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date > '2023-12-31'",
    "fieldname": "rate_1",
    "fieldtype": "Percent",
    "label": "Rate 1 (%)"
   },
   {
-   "depends_on": "eval:doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received'",
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date > '2023-12-31'",
    "fieldname": "rate_2",
    "fieldtype": "Percent",
    "label": "Rate 2 (%)"
   },
   {
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date > '2023-12-31'",
    "fieldname": "column_break_4",
    "fieldtype": "Column Break"
-  },
-  {
-   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
-   "fieldname": "normal_tax",
-   "fieldtype": "Float",
-   "label": "Normal tax (302)",
-   "precision": "2",
-   "read_only": 0
-  },
-  {
-   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
-   "fieldname": "reduced_tax",
-   "fieldtype": "Float",
-   "label": "Reduced tax (312)",
-   "precision": "2",
-   "read_only": 0
-  },
-  {
-   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
-   "fieldname": "lodging_tax",
-   "fieldtype": "Float",
-   "label": "Lodging tax (342)",
-   "precision": "2",
-   "read_only": 0
-  },
-  {
-   "depends_on": "eval:doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received'",
-   "fieldname": "tax_1",
-   "fieldtype": "Float",
-   "label": "Tax 1 (322)",
-   "precision": "2",
-   "read_only": 0
-  },
-  {
-   "depends_on": "eval:doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received'",
-   "fieldname": "tax_2",
-   "fieldtype": "Float",
-   "label": "Tax 2 (332)",
-   "precision": "2",
-   "read_only": 0
-  },
-  {
-   "fieldname": "additional_tax",
-   "fieldtype": "Float",
-   "label": "Additional tax (382)",
-   "precision": "2"
   },
   {
    "fieldname": "section_summary",
@@ -443,14 +420,189 @@
    "hidden": 1,
    "label": "Letter Head",
    "options": "Letter Head"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "normal_amount_2023",
+   "fieldtype": "Float",
+   "label": "Normal (302)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "reduced_amount_2023",
+   "fieldtype": "Float",
+   "label": "Reduced (312)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "lodging_amount_2023",
+   "fieldtype": "Float",
+   "label": "Lodging (342)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date < '2024-01-01'",
+   "fieldname": "amount_1_2023",
+   "fieldtype": "Float",
+   "label": "Amount 1 (322)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date < '2024-01-01'",
+   "fieldname": "amount_2_2023",
+   "fieldtype": "Float",
+   "label": "Amount 2 (332)",
+   "precision": "2"
+  },
+  {
+   "fieldname": "additional_amount_2023",
+   "fieldtype": "Float",
+   "label": "Additional (382)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "normal_rate_2023",
+   "fieldtype": "Percent",
+   "label": "Normal rate (7.7%)"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "reduced_rate_2023",
+   "fieldtype": "Percent",
+   "label": "Reduced rate (2.5%)"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "lodging_rate_2023",
+   "fieldtype": "Percent",
+   "label": "Lodging rate (3.7%)"
+  },
+  {
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date < '2024-01-01'",
+   "fieldname": "rate_1_2023",
+   "fieldtype": "Percent",
+   "label": "Rate 1 (%)"
+  },
+  {
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date < '2024-01-01'",
+   "fieldname": "rate_2_2023",
+   "fieldtype": "Percent",
+   "label": "Rate 2 (%)"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "normal_tax_2023",
+   "fieldtype": "Float",
+   "label": "Normal tax (302)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "reduced_tax_2023",
+   "fieldtype": "Float",
+   "label": "Reduced tax (312)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "lodging_tax_2023",
+   "fieldtype": "Float",
+   "label": "Lodging tax (342)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date < '2024-01-01'",
+   "fieldname": "tax_1_2023",
+   "fieldtype": "Float",
+   "label": "Tax 1 (322)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date < '2024-01-01'",
+   "fieldname": "tax_2_2023",
+   "fieldtype": "Float",
+   "label": "Tax 2 (332)",
+   "precision": "2"
+  },
+  {
+   "fieldname": "additional_tax_2023",
+   "fieldtype": "Float",
+   "label": "Additional tax (382)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "normal_tax",
+   "fieldtype": "Float",
+   "label": "Normal tax (303)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "reduced_tax",
+   "fieldtype": "Float",
+   "label": "Reduced tax (313)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:doc.vat_type == 'effective - agreed counterclaims' || doc.vat_type == 'effective - counterclaims received'",
+   "fieldname": "lodging_tax",
+   "fieldtype": "Float",
+   "label": "Lodging tax (343)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date > '2023-12-31'",
+   "fieldname": "tax_1",
+   "fieldtype": "Float",
+   "label": "Tax 1 (323)",
+   "precision": "2"
+  },
+  {
+   "depends_on": "eval:(doc.vat_type == 'flat rate - agreed counterclaims' || doc.vat_type == 'flat rate - counterclaims received') && doc.end_date > '2023-12-31'",
+   "fieldname": "tax_2",
+   "fieldtype": "Float",
+   "label": "Tax 2 (333)",
+   "precision": "2"
+  },
+  {
+   "fieldname": "additional_tax",
+   "fieldtype": "Float",
+   "label": "Additional tax (383)",
+   "precision": "2"
+  },
+  {
+   "fieldname": "html_oorx",
+   "fieldtype": "HTML",
+   "options": "<div style=\"height: 71.5px;\"></div>"
+  },
+  {
+   "fieldname": "html_tive",
+   "fieldtype": "HTML",
+   "options": "<div style=\"height: 71.5px;\"></div>"
+  },
+  {
+   "fieldname": "html_hinu",
+   "fieldtype": "HTML",
+   "options": "<div style=\"height: 71.5px;\"></div>"
+  },
+  {
+   "fieldname": "html_dxnx",
+   "fieldtype": "HTML",
+   "options": "<div style=\"height: 71.5px;\"></div>"
   }
  ],
  "is_submittable": 1,
- "modified": "2023-03-16 16:47:34.175434",
+ "links": [],
+ "modified": "2023-12-13 12:25:54.918760",
  "modified_by": "Administrator",
  "module": "ERPNextSwiss",
  "name": "VAT Declaration",
- "owner": "lars.mueller@libracore.com",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
  "permissions": [
   {
    "cancel": 1,
@@ -490,8 +642,11 @@
    "write": 1
   }
  ],
+ "read_only": 1,
+ "restrict_to_domain": "Gestion",
  "sort_field": "modified",
  "sort_order": "DESC",
+ "states": [],
  "title_field": "title",
  "track_changes": 1
 }

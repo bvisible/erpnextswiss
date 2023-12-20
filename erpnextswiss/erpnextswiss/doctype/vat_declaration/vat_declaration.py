@@ -10,7 +10,7 @@ from datetime import datetime
 
 @frappe.whitelist()
 def get_total_payments(start_date, end_date, company=None, flat=False):
-    flat = flat.lower() == "true"
+    flat = str(flat).lower() == "true"
     sums_by_tax_code = {}
     sell_account_start = 3000
     sell_account_end = 3999
