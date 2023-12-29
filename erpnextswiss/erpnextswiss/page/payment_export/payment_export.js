@@ -2775,7 +2775,9 @@ function totalAll() {
     });
 
     // Set the value of the totalAmount input element to the total paid amount
-    document.querySelector("#totalAmount input").value = totalPaidAmount.toFixed(2);
+    if(paidAmountInputs.length > 0) {
+        document.querySelector("#totalAmount input").value = totalPaidAmount.toFixed(2);
+    }
 }
 
 function copySelectedRows() {
