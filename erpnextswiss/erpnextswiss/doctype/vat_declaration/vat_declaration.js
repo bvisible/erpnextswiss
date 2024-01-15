@@ -1,12 +1,16 @@
 // Copyright (c) 2018-2023, libracore (https://www.libracore.com) and contributors
 // For license information, please see license.txt
 
+var allow_trigger = true;
 frappe.ui.form.on('VAT Declaration', {
     refresh: function(frm) {
         frm.add_custom_button(__("Get values"), function()
         {
             get_values(frm);
         });
+        if (frm.doc.__islocal) {
+            get_tax_rates(frm);
+        }
         /*frm.add_custom_button(__("Recalculate"), function()
         {
             recalculate(frm);
@@ -42,12 +46,7 @@ frappe.ui.form.on('VAT Declaration', {
                 frm.set_value('end_date', d.getFullYear() + "-09-30");
             }
 
-            cur_frm.set_value('title', title + " - " + (frm.doc.cmp_abbr || ""));
-        }
-    },
-    onload_post_render: function(frm) {
-        if (frm.doc.__islocal) {
-            get_tax_rates(frm);
+            frm.set_value('title', title + " - " + (frm.doc.cmp_abbr || ""));
         }
     },
     company: function(frm) {
@@ -60,10 +59,10 @@ frappe.ui.form.on('VAT Declaration', {
                     new_title.push(parts[i]);
                 }
                 new_title.push(frm.doc.cmp_abbr);
-                cur_frm.set_value("title", new_title.join(" - "));
+                frm.set_value("title", new_title.join(" - "));
             } else if (parts.length === 0) {
                 // key missing
-                cur_frm.set_value("title", frm.doc.title + " - " + frm.doc.cmp_abbr);
+                frm.set_value("title", frm.doc.title + " - " + frm.doc.cmp_abbr);
             }
 
         }
@@ -81,23 +80,29 @@ var new_vat_percent = false;
 function get_tax_rates(frm) {
     //console.log("get tax rates")
     frappe.db.get_value("Account", {"tax_code": "302", "company": frm.doc.company}, "tax_rate").then((r) => {
-        frm.set_value("normal_rate_2023", r.message.tax_rate);
+        frm.doc.normal_rate_2023 = r.message.tax_rate;
+        frm.refresh_field("normal_rate_2023");
     });
     frappe.db.get_value("Account", {"tax_code": "312", "company": frm.doc.company}, "tax_rate").then((r) => {
-        frm.set_value("reduced_rate_2023", r.message.tax_rate);
+        frm.doc.reduced_rate_2023 = r.message.tax_rate;
+        frm.refresh_field("reduced_rate_2023");
     });
     frappe.db.get_value("Account", {"tax_code": "342", "company": frm.doc.company}, "tax_rate").then((r) => {
-        frm.set_value("lodging_rate_2023", r.message.tax_rate);
+        frm.doc.lodging_rate_2023 = r.message.tax_rate;
+        frm.refresh_field("lodging_rate_2023");
     });
 
     frappe.db.get_value("Account", {"tax_code": "303", "company": frm.doc.company}, "tax_rate").then((r) => {
-        frm.set_value("normal_rate", r.message.tax_rate);
+        frm.doc.normal_rate = r.message.tax_rate;
+        frm.refresh_field("normal_rate");
     });
     frappe.db.get_value("Account", {"tax_code": "313", "company": frm.doc.company}, "tax_rate").then((r) => {
-        frm.set_value("reduced_rate", r.message.tax_rate);
+        frm.doc.reduced_rate = r.message.tax_rate;
+        frm.refresh_field("reduced_rate");
     });
     frappe.db.get_value("Account", {"tax_code": "343", "company": frm.doc.company}, "tax_rate").then((r) => {
-        frm.set_value("lodging_rate", r.message.tax_rate);
+        frm.doc.lodging_rate = r.message.tax_rate;
+        frm.refresh_field("lodging_rate");
     });
 }
 // retrieve values from database
@@ -120,8 +125,8 @@ function get_values(frm) {
             freeze: true,
             callback: function (r) {
                 if (r.message) {
+                    allow_trigger = false;
                     let res = r.message;
-                    console.log(res);
                     frm.set_value('purchase_invoice_summary', res.summary_purchase_invoice)
                     frm.set_value('sales_invoice_summary', res.summary_sales_invoice)
                     frm.set_value('journal_entry_summary', res.summary_journal_entry)
@@ -150,17 +155,34 @@ function get_values(frm) {
                     frm.set_value("donations", 0);
                     if (frm.doc.vat_type.includes("effective")) {
                         frm.set_value('non_taxable_revenue', res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);
+                        let normal_tax_2023 = res.sums_by_tax_code['302'] ? (res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit) : 0;
+                        let normal_rate_2023 = frm.doc.normal_rate_2023;
+                        let reduced_tax_2023 = res.sums_by_tax_code['312'] ? (res.sums_by_tax_code['312'].total_credit - res.sums_by_tax_code['312'].total_debit) : 0;
+                        let reduced_rate_2023 = frm.doc.reduced_rate_2023;
+                        let lodging_tax_2023 = res.sums_by_tax_code['342'] ? (res.sums_by_tax_code['342'].total_credit - res.sums_by_tax_code['342'].total_debit) : 0;
+                        let lodging_rate_2023 = frm.doc.lodging_rate_2023;
+                        let normal_tax = res.sums_by_tax_code['303'] ? (res.sums_by_tax_code['303'].total_credit - res.sums_by_tax_code['303'].total_debit) : 0;
+                        let normal_rate = frm.doc.normal_rate;
+                        let reduced_tax = res.sums_by_tax_code['313'] ? (res.sums_by_tax_code['313'].total_credit - res.sums_by_tax_code['313'].total_debit) : 0;
+                        let reduced_rate = frm.doc.reduced_rate;
+                        let lodging_tax = res.sums_by_tax_code['343'] ? (res.sums_by_tax_code['343'].total_credit - res.sums_by_tax_code['343'].total_debit) : 0;
+                        let lodging_rate = frm.doc.lodging_rate;
+                        frm.set_value('normal_tax_2023', normal_tax_2023);
+                        frm.set_value('normal_amount_2023', normal_tax_2023 / (normal_rate_2023 / 100));
+                        frm.set_value('reduced_tax_2023', reduced_tax_2023);
+                        frm.set_value('reduced_amount_2023', reduced_tax_2023 / (reduced_rate_2023 / 100));
+                        frm.set_value('lodging_tax_2023', lodging_tax_2023);
+                        frm.set_value('lodging_amount_2023', lodging_tax_2023 / (lodging_rate_2023 / 100));
 
-                        frm.set_value('normal_tax_2023', res.sums_by_tax_code['302'] ? (res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit) : 0);
-                        frm.set_value('reduced_tax_2023', res.sums_by_tax_code['312'] ? (res.sums_by_tax_code['312'].total_credit - res.sums_by_tax_code['312'].total_debit) : 0);
-                        frm.set_value('lodging_tax_2023', res.sums_by_tax_code['342'] ? (res.sums_by_tax_code['342'].total_credit - res.sums_by_tax_code['342'].total_debit) : 0);
+                        frm.set_value('normal_tax', normal_tax);
+                        frm.set_value('normal_amount', normal_tax / (normal_rate / 100));
+                        frm.set_value('reduced_tax', reduced_tax);
+                        frm.set_value('reduced_amount', reduced_tax / (reduced_rate / 100));
+                        frm.set_value('lodging_tax', lodging_tax);
+                        frm.set_value('lodging_amount', lodging_tax / (lodging_rate / 100));
 
-                        frm.set_value('normal_tax', res.sums_by_tax_code['303'] ? (res.sums_by_tax_code['303'].total_credit - res.sums_by_tax_code['303'].total_debit) : 0);
-                        frm.set_value('reduced_tax', res.sums_by_tax_code['313'] ? (res.sums_by_tax_code['313'].total_credit - res.sums_by_tax_code['313'].total_debit) : 0);
-                        frm.set_value('lodging_tax', res.sums_by_tax_code['343'] ? (res.sums_by_tax_code['343'].total_credit - res.sums_by_tax_code['343'].total_debit) : 0);
-
-                        console.log(res.sums_by_tax_code['302'], res.sums_by_tax_code['312'], res.sums_by_tax_code['342'])
-                        console.log(res.sums_by_tax_code['302'].total_credit, res.sums_by_tax_code['302'].total_debit, res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit)
+                        //console.log(res.sums_by_tax_code['302'], res.sums_by_tax_code['312'], res.sums_by_tax_code['342'])
+                        //console.log(res.sums_by_tax_code['302'].total_credit, res.sums_by_tax_code['302'].total_debit, res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit)
 
                         // Pretaxes
                         frm.set_value('pretax_material', res.sums_by_tax_code['400'] ? (res.sums_by_tax_code['400'].total_debit - res.sums_by_tax_code['400'].total_credit) : 0);
@@ -206,6 +228,9 @@ function get_values(frm) {
                         update_payable_tax(frm);
                         update_taxable_revenue(frm);
                     }, 200);
+                    setTimeout(function () {
+                        allow_trigger = true;
+                    }, 5000);
                 }
             }
         });
@@ -258,80 +283,90 @@ frappe.ui.form.on("VAT Declaration", "rate_2_2023", function(frm) { update_tax_o
 frappe.ui.form.on("VAT Declaration", "tax_2_2023", function(frm) { update_tax_or_amount(frm, "_2", false) } );
 
 function update_tax_or_amount(frm, concerned_tax, from_amount=false) {
-    setTimeout(function() {
-        if (concerned_tax != "additional") {
-            if (from_amount) {
-                let amount_2023 = null;
-                let tax_rate_2023 = null;
-                let tax_field_2023 = null;
-                let amount = null;
-                let tax_rate = null;
-                let tax_field = null;
-                if (concerned_tax != "_1" && concerned_tax != "_2") {
-                    amount_2023 = frm.get_field(concerned_tax + '_amount_2023').value;
-                    tax_rate_2023 = frm.get_field(concerned_tax + '_rate_2023').value;
-                    tax_field_2023 = concerned_tax + '_tax_2023';
+    if(allow_trigger) {
+        setTimeout(function () {
+            if (concerned_tax != "additional") {
+                if (from_amount) {
+                    let amount_2023 = null;
+                    let tax_rate_2023 = null;
+                    let tax_field_2023 = null;
+                    let amount = null;
+                    let tax_rate = null;
+                    let tax_field = null;
+                    if (concerned_tax != "_1" && concerned_tax != "_2") {
+                        amount_2023 = frm.get_field(concerned_tax + '_amount_2023').value;
+                        tax_rate_2023 = frm.get_field(concerned_tax + '_rate_2023').value;
+                        tax_field_2023 = concerned_tax + '_tax_2023';
 
-                    amount = frm.get_field(concerned_tax + '_amount').value;
-                    tax_rate = frm.get_field(concerned_tax + '_rate').value;
-                    tax_field = concerned_tax + '_tax';
+                        amount = frm.get_field(concerned_tax + '_amount').value;
+                        tax_rate = frm.get_field(concerned_tax + '_rate').value;
+                        tax_field = concerned_tax + '_tax';
+                    } else {
+                        amount_2023 = frm.get_field('amount' + concerned_tax + '_2023').value;
+                        tax_rate_2023 = frm.get_field('rate' + concerned_tax + '_2023').value;
+                        tax_field_2023 = 'tax' + concerned_tax + '_2023';
+
+                        amount = frm.get_field('amount' + concerned_tax).value;
+                        tax_rate = frm.get_field('rate' + concerned_tax).value;
+                        tax_field = 'tax' + concerned_tax;
+                    }
+                    let new_tax_2023 = amount_2023 * tax_rate_2023 / 100;
+                    let new_tax = amount * tax_rate / 100;
+                    //frm.get_field(tax_field).set_input(new_tax);
+                    //frm.set_value(tax, amount * (frm.doc[tax.replace('amount', 'rate')] / 100));
+                    frappe.model.set_value(frm.doctype, frm.docname, tax_field_2023, new_tax_2023);
+                    frm.doc.tax_field_2023 = new_tax_2023;
+                    frappe.model.set_value(frm.doctype, frm.docname, tax_field, new_tax);
+                    frm.doc.tax_field = new_tax;
                 } else {
-                    amount_2023 = frm.get_field('amount' + concerned_tax + '_2023').value;
-                    tax_rate_2023 = frm.get_field('rate' + concerned_tax + '_2023').value;
-                    tax_field_2023 = 'tax' + concerned_tax + '_2023';
+                    let tax_2023 = null;
+                    let tax_rate_2023 = null;
+                    let amount_field_2023 = null;
+                    let tax = null;
+                    let tax_rate = null;
+                    let amount_field = null;
+                    if (concerned_tax != "_1" && concerned_tax != "_2") {
+                        tax_2023 = frm.get_field(concerned_tax + '_tax_2023').value;
+                        tax_rate_2023 = frm.get_field(concerned_tax + '_rate_2023').value;
+                        amount_field_2023 = concerned_tax + '_amount_2023';
 
-                    amount = frm.get_field('amount' + concerned_tax).value;
-                    tax_rate = frm.get_field('rate' + concerned_tax).value;
-                    tax_field = 'tax' + concerned_tax;
+                        tax = frm.get_field(concerned_tax + '_tax').value;
+                        tax_rate = frm.get_field(concerned_tax + '_rate').value;
+                        amount_field = concerned_tax + '_amount';
+                    } else {
+                        tax_2023 = frm.get_field('tax' + concerned_tax + '_2023').value;
+                        tax_rate_2023 = frm.get_field('rate' + concerned_tax + '_2023').value;
+                        amount_field_2023 = 'amount' + concerned_tax + '_2023';
+
+                        tax = frm.get_field('tax' + concerned_tax).value;
+                        tax_rate = frm.get_field('rate' + concerned_tax).value;
+                        amount_field = 'amount' + concerned_tax;
+                    }
+                    let new_amount_2023 = tax_2023 / (tax_rate_2023 / 100);
+                    let new_amount = tax / (tax_rate / 100);
+                    //frm.get_field(amount_field).set_input(flt(new_amount));
+                    if(!isNaN(new_amount_2023)) {
+                        frappe.model.set_value(frm.doctype, frm.docname, amount_field_2023, new_amount_2023);
+                    }
+                    if(!isNaN(new_amount)) {
+                        frappe.model.set_value(frm.doctype, frm.docname, amount_field, new_amount);
+                    }
                 }
-                let new_tax_2023 = amount_2023 * tax_rate_2023 / 100;
-                let new_tax = amount * tax_rate / 100;
-                //frm.get_field(tax_field).set_input(new_tax);
-                //frm.set_value(tax, amount * (frm.doc[tax.replace('amount', 'rate')] / 100));
-                frappe.model.set_value(frm.doctype, frm.docname, tax_field_2023, new_tax_2023);
-                frappe.model.set_value(frm.doctype, frm.docname, tax_field, new_tax);
-            } else {
-                let tax_2023 = null;
-                let tax_rate_2023 = null;
-                let amount_field_2023 = null;
-                let tax = null;
-                let tax_rate = null;
-                let amount_field = null;
-                if (concerned_tax != "_1" && concerned_tax != "_2") {
-                    tax_2023 = frm.get_field(concerned_tax + '_tax_2023').value;
-                    tax_rate_2023 = frm.get_field(concerned_tax + '_rate_2023').value;
-                    amount_field_2023 = concerned_tax + '_amount_2023';
-
-                    tax = frm.get_field(concerned_tax + '_tax').value;
-                    tax_rate = frm.get_field(concerned_tax + '_rate').value;
-                    amount_field = concerned_tax + '_amount';
-                } else {
-                    tax_2023 = frm.get_field('tax' + concerned_tax + '_2023').value;
-                    tax_rate_2023 = frm.get_field('rate' + concerned_tax + '_2023').value;
-                    amount_field_2023 = 'amount' + concerned_tax + '_2023';
-
-                    tax = frm.get_field('tax' + concerned_tax).value;
-                    tax_rate = frm.get_field('rate' + concerned_tax).value;
-                    amount_field = 'amount' + concerned_tax;
-                }
-                let new_amount_2023 = tax_2023 / (tax_rate_2023 / 100);
-                let new_amount = tax / (tax_rate / 100);
-                //frm.get_field(amount_field).set_input(flt(new_amount));
-                frappe.model.set_value(frm.doctype, frm.docname, amount_field_2023, new_amount_2023);
-                frappe.model.set_value(frm.doctype, frm.docname, amount_field, new_amount);
             }
-        }
-        //frm.refresh_fields();
-        let total_taxes = 0
-        if(frm.doc.vat_type.includes("flat rate")) {
-            total_taxes = (frm.get_field("tax_1_2023").value || 0) + (frm.get_field("tax_2_2023").value || 0) + (frm.get_field("additional_tax_2023").value || 0);
-            total_taxes += (frm.get_field("tax_1").value || 0) + (frm.get_field("tax_2").value || 0) + (frm.get_field("additional_tax").value || 0);
-        } else {
-            total_taxes = (frm.get_field("normal_tax_2023").value || 0) + (frm.get_field("reduced_tax_2023").value || 0) + (frm.get_field("lodging_tax_2023").value || 0)  + (frm.get_field("additional_tax_2023").value || 0);
-            total_taxes += (frm.get_field("normal_tax").value || 0) + (frm.get_field("reduced_tax").value || 0) + (frm.get_field("lodging_tax").value || 0)  + (frm.get_field("additional_tax").value || 0);
-        }
-        frm.set_value('total_tax', total_taxes);
-    }, 200);
+            //frm.refresh_fields();
+            let total_taxes = 0
+            if (frm.doc.vat_type.includes("flat rate")) {
+                total_taxes = (frm.get_field("tax_1_2023").value || 0) + (frm.get_field("tax_2_2023").value || 0) + (frm.get_field("additional_tax_2023").value || 0);
+                total_taxes += (frm.get_field("tax_1").value || 0) + (frm.get_field("tax_2").value || 0) + (frm.get_field("additional_tax").value || 0);
+            } else {
+                total_taxes = (frm.get_field("normal_tax_2023").value || 0) + (frm.get_field("reduced_tax_2023").value || 0) + (frm.get_field("lodging_tax_2023").value || 0) + (frm.get_field("additional_tax_2023").value || 0);
+                total_taxes += (frm.get_field("normal_tax").value || 0) + (frm.get_field("reduced_tax").value || 0) + (frm.get_field("lodging_tax").value || 0) + (frm.get_field("additional_tax").value || 0);
+            }
+            frm.set_value('total_tax', total_taxes);
+            frm.doc.total_tax = total_taxes;
+            frm.refresh_fields()
+        }, 400);
+    }
 }
 
 function update_tax_amounts(frm) {
@@ -384,7 +419,6 @@ function update_taxable_revenue(frm) {
         (frm.get_field("misc").value || 0);
     //console.log(deductions, frm.get_field("total_revenue").value || 0, frm.get_field("non_taxable_revenue").value || 0);
     var taxable = (frm.get_field("total_revenue").value || 0) - (frm.get_field("non_taxable_revenue").value || 0) - deductions;
-    console.log(taxable)
     frm.set_value('total_deductions', deductions);
     frm.set_value('taxable_revenue', taxable);
 }

@@ -7,6 +7,8 @@
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
+  "vat_tab",
+  "vat_declaration_options",
   "title",
   "company",
   "cmp_abbr",
@@ -85,7 +87,19 @@
   "section_other_cashflows",
   "grants",
   "donations",
-  "amended_from"
+  "amended_from",
+  "sales_invoice_summary_tab",
+  "sales_invoice_summary_section",
+  "sales_invoice_summary",
+  "purchase_invoice_summary_tab",
+  "purchase_invoice_summary_section",
+  "purchase_invoice_summary",
+  "journal_entry_summary_section",
+  "journal_entry_summary_tab",
+  "journal_entry_summary",
+  "no_vat_summary_tab",
+  "no_vat_summary_section",
+  "no_vat_summary"
  ],
  "fields": [
   {
@@ -593,11 +607,88 @@
    "fieldname": "html_dxnx",
    "fieldtype": "HTML",
    "options": "<div style=\"height: 71.5px;\"></div>"
+  },
+  {
+   "fieldname": "vat_tab",
+   "fieldtype": "Tab Break",
+   "label": "VAT Declaration"
+  },
+  {
+   "fieldname": "sales_invoice_summary_tab",
+   "fieldtype": "Tab Break",
+   "label": "Sales Invoice Journal",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "sales_invoice_summary",
+   "fieldtype": "Table",
+   "label": "Sales Invoices",
+   "options": "VAT Declaration Sales Invoice Summary",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "purchase_invoice_summary_tab",
+   "fieldtype": "Tab Break",
+   "label": "Purchase Invoice Journal",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "purchase_invoice_summary",
+   "fieldtype": "Table",
+   "label": "Purchase Invoices",
+   "options": "VAT Declaration Purchase Invoice Summary",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "journal_entry_summary_tab",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "journal_entry_summary",
+   "fieldtype": "Table",
+   "label": "Journal Entries",
+   "options": "VAT Declaration Journal Entry Summary",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "no_vat_summary_tab",
+   "fieldtype": "Tab Break",
+   "label": "No VAT Journal",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "no_vat_summary",
+   "fieldtype": "Table",
+   "label": "No VAT",
+   "options": "VAT Declaration No VAT Summary",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "vat_declaration_options",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "sales_invoice_summary_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "purchase_invoice_summary_section",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "journal_entry_summary_section",
+   "fieldtype": "Tab Break",
+   "label": "Journal Entry Journal",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "no_vat_summary_section",
+   "fieldtype": "Section Break"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2023-12-13 12:25:54.918760",
+ "modified": "2024-01-12 16:30:41.225186",
  "modified_by": "Administrator",
  "module": "ERPNextSwiss",
  "name": "VAT Declaration",
