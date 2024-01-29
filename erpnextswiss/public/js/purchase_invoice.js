@@ -466,6 +466,36 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
     }
 
     //field_list.push({'fieldname': 'tax_rate', 'fieldtype': 'Float', 'label': __('Tax Rate in %'), 'default': default_settings.default_tax_rate});
+    function checkReferenceExists(reference) {
+        frappe.db.get_list('Purchase Invoice', {
+            fields: ['name'],
+            filters: {
+                'esr_reference_number': reference
+            }
+        }).then(records => {
+            if(records.length > 0) {
+
+                frappe.msgprint({
+                    title: __('Are you sure you want to proceed?'),
+                    message: __('This reference is already used in a Purchase Invoice.'),
+                    primary_action: {
+                        'label': __('Continue'),
+                        'action': () => {
+                            cur_dialog.hide();
+                        }
+                    },
+                    secondary_action: {
+                        'label': __('Cancel'),
+                        'action': () => {
+                            cur_dialog.hide();
+                            frappe.set_route('List', 'Purchase Invoice');
+                        }
+                    }
+                });
+            }
+        });
+    }
+
     field_list.push({'fieldname': 'posting_date', 'fieldtype': 'Date', 'label': __('Date'), 'read_only': 0, 'default': "Today"});
     if(qr_type == "IBAN"){
         field_list.push({'fieldname': 'iban', 'fieldtype': 'Data', 'label': __('IBAN'), 'read_only': 1, 'default': participant});
@@ -485,6 +515,9 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
                 }, 200);
             }
         });
+        if(qr_type != "IBAN"){
+            checkReferenceExists(reference);
+        }
     }, 1000);
 
     field_list.push({'fieldname': 'customer_reference', 'fieldtype': 'Data', 'label': __('Supplier reference'), 'read_only': 0});

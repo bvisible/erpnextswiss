@@ -2443,6 +2443,17 @@ frappe.pages['payment_export'].on_page_load = function(wrapper) {
     frappe.breadcrumbs.add("ERPNextSwiss");
 }
 
+function updatePaymentEntryIfExist(paymentEntryName, postingDate) {
+    frappe.db.exists('Payment Entry', paymentEntryName)
+        .then(exists => {
+            if (exists) {
+                frappe.db.set_value('Payment Entry', paymentEntryName, 'posting_date', postingDate);
+            } else {
+                console.log(`Payment Entry ${paymentEntryName} does not exist.`);
+            }
+        });
+}
+
 frappe.payment_export = {
 	start: 0,
 	make: function(page) {
@@ -2468,7 +2479,11 @@ frappe.payment_export = {
                     var dateParts = date.split("-"); // Séparer la date en parties individuelles
                     var formattedDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`; // Réarranger les parties de la date
                     var posting_date = formattedDate;
-                    frappe.db.set_value('Payment Entry', checkedPayments[i].name, 'posting_date', posting_date, update_modified=false);
+                    //console.log(checkedPayments[i]);
+                    //setTimeout(function(){
+                        //console.log(checkedPayments[i].name);
+                        updatePaymentEntryIfExist(checkedPayments[i].name, posting_date);
+                    //}, 100);
                 }
                 setTimeout(function(){
                     // generate payment file
