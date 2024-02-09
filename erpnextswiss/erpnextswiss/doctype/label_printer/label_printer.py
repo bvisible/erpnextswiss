@@ -310,7 +310,7 @@ def generate_employee_card(label_details, employee_name):
     content = content.replace("{name}", employee.employee_name if employee.employee_name else "")
     content = content.replace("{department}", employee.department if employee.department else "")
     content = content.replace("{designation}", employee.designation if employee.designation else "")
-    content = content.replace("{employee_id}", employee.employee if employee.employee else "")
+    content = content.replace("{employee_id}", employee.employee_number if employee.employee_number else "")
     content = content.replace("{date_of_joining}", employee.date_of_joining.strftime("%d/%m/%Y") if employee.date_of_joining else "")
     content = content.replace("{date_of_birth}", employee.date_of_birth.strftime("%d/%m/%Y") if employee.date_of_birth else "")
     content = content.replace("{blood_group}", employee.blood_group if employee.blood_group else "")
