@@ -303,7 +303,7 @@ def generate_employee_card(label_details, employee_name):
     employee = frappe.get_doc("Employee", employee_name)
 
     # Generate QR code for the employee name
-    qr_img = generate_barcode_or_qr(employee_name, "QR", label_details.get("qr_color"), label_details.get("qr_height"))
+    qr_img = generate_barcode_or_qr(employee.employee_number, "QR", label_details.get("qr_color"), label_details.get("qr_height"))
     qr_img_tag = '<img style="height:{}px;" src="data:image/png;base64, {}"/>'.format(label_details.get("qr_height"), qr_img)
 
     content = label_details.get("content")

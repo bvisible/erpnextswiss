@@ -63,7 +63,7 @@ def generate_payment_file(payments):
         # initiating party requires at least name or identification
         content += make_line("      <InitgPty>")
         # initiating party name ( e.g. MUSTER AG )
-        content += make_line("        <Nm>" + get_company_name(payments[0]) + "</Nm>")
+        content += make_line("        <Nm>" + html.escape(get_company_name(payments[0])) + "</Nm>")
         content += make_line("      </InitgPty>")
         content += make_line("    </GrpHdr>")
 
@@ -359,10 +359,10 @@ def add_creditor_info(payment_record):
     # creditor information
     payment_content += make_line("        <Cdtr>") 
     # name of the creditor/supplier
-    name = payment_record.party
+    name = html.escape(payment_record.party)
     if payment_record.party_type == "Employee":
-        name = frappe.get_value("Employee", payment_record.party, "employee_name")
-    payment_content += make_line("          <Nm>" + name  + "</Nm>")
+        name = html.escape(frappe.get_value("Employee", payment_record.party, "employee_name"))
+    payment_content += make_line("          <Nm>" + name + "</Nm>")
     # address of creditor/supplier (should contain at least country and first address line
     # get supplier address
     if payment_record.party_type == "Supplier" or payment_record.party_type == "Customer":
@@ -571,7 +571,7 @@ def generate_pain001(pain001_data):
         # initiating party requires at least name or identification
         content += make_line("      <InitgPty>")
         # initiating party name ( e.g. MUSTER AG )
-        content += make_line("        <Nm>{0}</Nm>".format(pain001_data['company']))
+        content += make_line("        <Nm>{0}</Nm>".format(html.escape(pain001_data['company'])))
         content += make_line("      </InitgPty>")
         content += make_line("    </GrpHdr>")
 
@@ -595,7 +595,7 @@ def generate_pain001(pain001_data):
             # debitor (technically ignored, but recommended)
             payment_content += make_line("      <Dbtr>")
             # debitor name
-            payment_content += make_line("        <Nm>{0}</Nm>".format(pain001_data['company']))
+            payment_content += make_line("        <Nm>{0}</Nm>".format(html.escape(pain001_data['company'])))
             # postal address (recommendadtion: do not use)
             #content += make_line("        <PstlAdr>")
             #content += make_line("          <Ctry>CH</Ctry>")
@@ -658,7 +658,7 @@ def generate_pain001(pain001_data):
             if payment['transaction_type'] == "ESR":
                 # add creditor information
                 payment_content += make_line("        <Cdtr>") 
-                payment_content += make_line("          <Nm>{0}</Nm>".format(payment['receiver_name']))
+                payment_content += make_line("          <Nm>{0}</Nm>".format(html.escape(payment['receiver_name'])))
                 payment_content += make_line("          <PstlAdr>")
                 payment_content += make_line("            <StrtNm>{0}</StrtNm>".format(payment['receiver_street']))
                 payment_content += make_line("            <BldgNb>{0}</BldgNb>".format(payment['receiver_building']))
@@ -702,7 +702,7 @@ def generate_pain001(pain001_data):
                 # IBAN or SEPA payment
                 # add creditor information
                 payment_content += make_line("        <Cdtr>") 
-                payment_content += make_line("          <Nm>{0}</Nm>".format(payment['receiver_name']))
+                payment_content += make_line("          <Nm>{0}</Nm>".format(html.escape(payment['receiver_name'])))
                 payment_content += make_line("          <PstlAdr>")
                 payment_content += make_line("            <StrtNm>{0}</StrtNm>".format(payment['receiver_street']))
                 payment_content += make_line("            <BldgNb>{0}</BldgNb>".format(payment['receiver_building']))
