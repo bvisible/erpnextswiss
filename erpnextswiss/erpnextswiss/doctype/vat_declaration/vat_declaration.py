@@ -316,20 +316,35 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
         # end journal entry summary
 
     summary_journal_entry = sorted(summary_journal_entry, key=lambda x: x['posting_date'])
+    summary_journal_entry_old, summary_journal_entry_new = split_vat_items(summary_journal_entry, True)
     sum_dict = {}
-    for d in summary_journal_entry:
+    for d in summary_journal_entry_old:
         for key, value in d.items():
             if key not in ["document_type", "document_name", "posting_date"]:
                 sum_dict[key] = sum_dict.get(key, 0) + value
-    summary_journal_entry.append(sum_dict)
+    summary_journal_entry_old.append(sum_dict)
+    sum_dict = {}
+    for d in summary_journal_entry_new:
+        for key, value in d.items():
+            if key not in ["document_type", "document_name", "posting_date"]:
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_journal_entry_new.append(sum_dict)
 
     summary_sales_invoice = sorted(summary_sales_invoice, key=lambda x: x['posting_date'])
+    summary_sales_invoice_old, summary_sales_invoice_new = split_vat_items(summary_sales_invoice)
+
     sum_dict = {}
-    for d in summary_sales_invoice:
+    for d in summary_sales_invoice_old:
         for key, value in d.items():
             if key not in ["document_type", "document_name", "posting_date"]:
                 sum_dict[key] = sum_dict.get(key, 0) + value
-    summary_sales_invoice.append(sum_dict)
+    summary_sales_invoice_old.append(sum_dict)
+    sum_dict = {}
+    for d in summary_sales_invoice_new:
+        for key, value in d.items():
+            if key not in ["document_type", "document_name", "posting_date"]:
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_sales_invoice_new.append(sum_dict)
 
     summary_purchase_invoice = sorted(summary_purchase_invoice, key=lambda x: x['posting_date'])
     sum_dict = {}
@@ -348,9 +363,10 @@ def get_total_payments(start_date, end_date, company=None, flat=False):
     summary_no_vat.append(sum_dict)
 
     return {"sums_by_tax_code": sums_by_tax_code, "net_sell": net_sell, "net_purchase": net_purchase,
-            "no_vat_sell": no_vat_sell, "summary_sales_invoice": summary_sales_invoice,
-            "summary_journal_entry": summary_journal_entry, "summary_no_vat": summary_no_vat,
-            "summary_purchase_invoice": summary_purchase_invoice}
+            "no_vat_sell": no_vat_sell, "summary_sales_invoice_old": summary_sales_invoice_old,
+            "summary_sales_invoice_new": summary_sales_invoice_new, "summary_sales_invoice": summary_sales_invoice,
+            "summary_journal_entry_old": summary_journal_entry_old, "summary_journal_entry_new": summary_journal_entry_new,
+            "summary_no_vat": summary_no_vat, "summary_purchase_invoice": summary_purchase_invoice}
 
 @frappe.whitelist()
 def get_total_invoiced(start_date, end_date, company=None, flat=False):
@@ -631,20 +647,35 @@ def get_total_invoiced(start_date, end_date, company=None, flat=False):
         # end journal entry summary
 
     summary_journal_entry = sorted(summary_journal_entry, key=lambda x: x['posting_date'])
+    summary_journal_entry_old, summary_journal_entry_new = split_vat_items(summary_journal_entry, True)
     sum_dict = {}
-    for d in summary_journal_entry:
+    for d in summary_journal_entry_old:
         for key, value in d.items():
             if key not in ["document_type", "document_name", "posting_date"]:
                 sum_dict[key] = sum_dict.get(key, 0) + value
-    summary_journal_entry.append(sum_dict)
+    summary_journal_entry_old.append(sum_dict)
+    sum_dict = {}
+    for d in summary_journal_entry_new:
+        for key, value in d.items():
+            if key not in ["document_type", "document_name", "posting_date"]:
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_journal_entry_new.append(sum_dict)
 
     summary_sales_invoice = sorted(summary_sales_invoice, key=lambda x: x['posting_date'])
+    summary_sales_invoice_old, summary_sales_invoice_new = split_vat_items(summary_sales_invoice)
+
     sum_dict = {}
-    for d in summary_sales_invoice:
+    for d in summary_sales_invoice_old:
         for key, value in d.items():
             if key not in ["document_type", "document_name", "posting_date"]:
                 sum_dict[key] = sum_dict.get(key, 0) + value
-    summary_sales_invoice.append(sum_dict)
+    summary_sales_invoice_old.append(sum_dict)
+    sum_dict = {}
+    for d in summary_sales_invoice_new:
+        for key, value in d.items():
+            if key not in ["document_type", "document_name", "posting_date"]:
+                sum_dict[key] = sum_dict.get(key, 0) + value
+    summary_sales_invoice_new.append(sum_dict)
 
     summary_purchase_invoice = sorted(summary_purchase_invoice, key=lambda x: x['posting_date'])
     sum_dict = {}
@@ -663,8 +694,41 @@ def get_total_invoiced(start_date, end_date, company=None, flat=False):
     summary_no_vat.append(sum_dict)
 
     return {"sums_by_tax_code": sums_by_tax_code, "net_sell": net_sell, "net_purchase": net_purchase, "no_vat_sell": no_vat_sell,
-            "summary_sales_invoice": summary_sales_invoice, "summary_purchase_invoice": summary_purchase_invoice,
-            "summary_journal_entry": summary_journal_entry, "summary_no_vat": summary_no_vat}
+            "summary_sales_invoice": summary_sales_invoice,
+            "summary_sales_invoice_old": summary_sales_invoice_old, "summary_sales_invoice_new": summary_sales_invoice_new,
+            "summary_journal_entry_old": summary_journal_entry_old, "summary_journal_entry_new": summary_journal_entry_new,
+            "summary_purchase_invoice": summary_purchase_invoice, "summary_no_vat": summary_no_vat}
+
+def split_vat_items(base_list, force_new=False):
+    list_with_2 = []
+    list_with_3 = []
+    for item in base_list:
+        #vat_with_2 = any(key.endswith('2') and value > 0 for key, value in item.items() if key.startswith('vat_'))
+        vat_with_2 = False
+        for key, value in item.items():
+            if key.startswith('vat_') and key.endswith('2') and value > 0:
+                vat_with_2 = True
+                break
+        if force_new:
+            #vat_2_are_zero = all(value == 0 for key, value in item.items() if key.startswith('vat_') and key.endswith('2'))
+            vat_with_3 = True
+            for key, value in item.items():
+                if key.startswith('vat_') and key.endswith('2') and value != 0:
+                    vat_with_3 = False
+                    break
+        else:
+            #vat_with_3 = any(key.endswith('3') and value > 0 for key, value in item.items() if key.startswith('vat_')) and vat_2_are_zero
+            vat_with_3 = False
+            for key, value in item.items():
+                if key.startswith('vat_') and key.endswith('3') and value > 0:
+                    vat_with_3 = True
+                    break
+        if vat_with_2:
+            list_with_2.append(item)
+        if vat_with_3:
+            list_with_3.append(item)
+
+    return list_with_2, list_with_3
 
 class VATDeclaration(Document):
     def create_transfer_file(self):

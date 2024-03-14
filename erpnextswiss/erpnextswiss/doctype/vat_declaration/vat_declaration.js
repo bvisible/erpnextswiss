@@ -128,8 +128,10 @@ function get_values(frm) {
                     allow_trigger = false;
                     let res = r.message;
                     frm.set_value('purchase_invoice_summary', res.summary_purchase_invoice)
-                    frm.set_value('sales_invoice_summary', res.summary_sales_invoice)
-                    frm.set_value('journal_entry_summary', res.summary_journal_entry)
+                    frm.set_value('sales_invoice_summary', res.summary_sales_invoice_new)
+                    frm.set_value('sales_invoice_summary_2023', res.summary_sales_invoice_old)
+                    frm.set_value('journal_entry_summary', res.summary_journal_entry_new)
+                    frm.set_value('journal_entry_summary_2023', res.summary_journal_entry_old)
                     frm.set_value('no_vat_summary', res.summary_no_vat)
                     let total = (res.net_sell.total_credit - res.net_sell.total_debit + res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);// - (res.net_purchase.total_debit - res.net_purchase.total_credit);
                     frm.set_value('total_revenue', total);
@@ -183,7 +185,7 @@ function get_values(frm) {
 
                         //console.log(res.sums_by_tax_code['302'], res.sums_by_tax_code['312'], res.sums_by_tax_code['342'])
                         //console.log(res.sums_by_tax_code['302'].total_credit, res.sums_by_tax_code['302'].total_debit, res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit)
-
+                        frm.set_value('total_tax', normal_tax_2023 + reduced_tax_2023 + lodging_tax_2023 + normal_tax + reduced_tax + lodging_tax);
                         // Pretaxes
                         frm.set_value('pretax_material', res.sums_by_tax_code['400'] ? (res.sums_by_tax_code['400'].total_debit - res.sums_by_tax_code['400'].total_credit) : 0);
                         frm.set_value('pretax_investments', res.sums_by_tax_code['405'] ? (res.sums_by_tax_code['405'].total_debit - res.sums_by_tax_code['405'].total_credit) : 0);

@@ -90,12 +90,14 @@
   "amended_from",
   "sales_invoice_summary_tab",
   "sales_invoice_summary_section",
+  "sales_invoice_summary_2023",
   "sales_invoice_summary",
   "purchase_invoice_summary_tab",
   "purchase_invoice_summary_section",
   "purchase_invoice_summary",
   "journal_entry_summary_section",
   "journal_entry_summary_tab",
+  "journal_entry_summary_2023",
   "journal_entry_summary",
   "no_vat_summary_tab",
   "no_vat_summary_section",
@@ -622,8 +624,7 @@
   {
    "fieldname": "sales_invoice_summary",
    "fieldtype": "Table",
-   "label": "Sales Invoices",
-   "options": "VAT Declaration Sales Invoice Summary",
+   "options": "VAT Declaration Sales Invoice Summary 2024",
    "print_hide": 1
   },
   {
@@ -646,8 +647,7 @@
   {
    "fieldname": "journal_entry_summary",
    "fieldtype": "Table",
-   "label": "Journal Entries",
-   "options": "VAT Declaration Journal Entry Summary",
+   "options": "VAT Declaration Journal Entry Summary 2024",
    "print_hide": 1
   },
   {
@@ -684,11 +684,25 @@
   {
    "fieldname": "no_vat_summary_section",
    "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "sales_invoice_summary_2023",
+   "fieldtype": "Table",
+   "label": "Sales Invoices",
+   "options": "VAT Declaration Sales Invoice Summary",
+   "print_hide": 1
+  },
+  {
+   "fieldname": "journal_entry_summary_2023",
+   "fieldtype": "Table",
+   "label": "Journal Entries",
+   "options": "VAT Declaration Journal Entry Summary",
+   "print_hide": 1
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2024-01-12 16:30:41.225186",
+ "modified": "2024-03-06 09:57:20.251198",
  "modified_by": "Administrator",
  "module": "ERPNextSwiss",
  "name": "VAT Declaration",
