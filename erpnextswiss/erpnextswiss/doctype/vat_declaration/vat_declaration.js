@@ -127,6 +127,9 @@ function get_values(frm) {
                 if (r.message) {
                     allow_trigger = false;
                     let res = r.message;
+                    console.log(res.summary_sales_invoice_old);
+                    console.log(res.summary_sales_invoice_new);
+                    console.log(res.summary_sales_invoice);
                     frm.set_value('purchase_invoice_summary', res.summary_purchase_invoice)
                     frm.set_value('sales_invoice_summary', res.summary_sales_invoice_new)
                     frm.set_value('sales_invoice_summary_2023', res.summary_sales_invoice_old)

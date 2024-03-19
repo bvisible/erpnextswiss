@@ -41,6 +41,18 @@ frappe.query_reports["Account Sheets"] = {
             "label": __("Cost Center"),
             "fieldtype": "Link",
             "options": "Cost Center"
+        },
+        {
+            "fieldname":"remark_max_length",
+            "label": __("Remark Max Length"),
+            "fieldtype": "Int",
+            "default": 100
+        },
+        {
+            "fieldname":"hide_null_accounts",
+            "label": __("Hide Null Accounts"),
+            "fieldtype": "Check",
+            "default": 1
         }
     ]
 };
