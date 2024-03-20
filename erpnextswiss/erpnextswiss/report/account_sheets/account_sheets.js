@@ -42,11 +42,34 @@ frappe.query_reports["Account Sheets"] = {
             "fieldtype": "Link",
             "options": "Cost Center"
         },
+
+        {
+            "fieldname":"max_rows",
+            "label": __("Max Rows In Report (Ignored In Print"),
+            "fieldtype": "Int",
+            "default": 1000,
+            "on_change": function(query_report) {
+                let maxRowsField = query_report.page.fields_dict.max_rows;
+                let value = maxRowsField.get_value();
+                if (!value) { // This checks for null, undefined, and 0
+                    maxRowsField.set_value(1000);
+                }
+                query_report.refresh();
+            }
+        },
         {
             "fieldname":"remark_max_length",
             "label": __("Remark Max Length"),
             "fieldtype": "Int",
-            "default": 100
+            "default": 100,
+            "on_change": function(query_report) {
+                let remarkMaxLength = query_report.page.fields_dict.remark_max_length;
+                let value = remarkMaxLength.get_value();
+                if (!value) { // This checks for null, undefined, and 0
+                    remarkMaxLength.set_value(100);
+                }
+                query_report.refresh();
+            }
         },
         {
             "fieldname":"hide_null_accounts",
