@@ -8,6 +8,7 @@ from frappe.model.document import Document
 
 class SalaryCertificate(Document):
     # this function gathers values from the database
+    @frappe.whitelist()
     def fetch_values(self):
         if not self.employee:
             frappe.msgprint( _("Please select a valid employee.") )

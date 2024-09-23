@@ -4,12 +4,42 @@
 var allow_trigger = true;
 frappe.ui.form.on('VAT Declaration', {
     refresh: function(frm) {
+        if(frappe.user.name != "Administrator") {
+            $('div[data-fieldname="section_break_tables"]').css('display', 'none');
+        }
+        update_tables(frm);
+
+        const table_fields = ['si_details', 'no_vat_si_details', 'pi_details', 'no_vat_pi_details', 'je_details', 'pe_details'];
+        table_fields.forEach(function(field) {
+            $(frm.fields_dict[field].grid.wrapper).find('.btn-secondary').on('click', function() {
+                update_tables(frm);
+            });
+        });
+        
         frm.add_custom_button(__("Get values"), function()
         {
             get_values(frm);
+            setTimeout(() => {
+
+                table_fields.forEach(function(field) {
+                    $(frm.fields_dict[field].grid.wrapper).find('.btn-secondary').on('click', function() {
+                        update_tables(frm);
+                    });
+                });
+            }, 500);
         });
         if (frm.doc.__islocal) {
             get_tax_rates(frm);
+        }
+        frm.set_df_property('purchase_invoice_summary', 'hidden', true);
+        frm.set_df_property('sales_invoice_summary', 'hidden', true);
+        frm.set_df_property('sales_invoice_summary_2023', 'hidden', true);
+        frm.set_df_property('journal_entry_summary', 'hidden', true);
+        frm.set_df_property('journal_entry_summary_2023', 'hidden', true);
+        if(frm.doc.vat_type.includes("flat rate")) {
+            frm.set_df_property('no_vat_summary_tab', 'hidden', true);
+            frm.set_df_property('no_vat_si_details', 'hidden', true);
+            frm.set_df_property('no_vat_pi_details', 'hidden', true);
         }
         /*frm.add_custom_button(__("Recalculate"), function()
         {
@@ -74,7 +104,93 @@ frappe.ui.form.on('VAT Declaration', {
             else new_vat_percent = false;
         }
     },
+    vat_type: function(frm) {
+        if(frm.doc.vat_type.includes("flat rate")) {
+            frm.set_df_property('no_vat_summary_tab', 'hidden', true);
+            frm.set_df_property('no_vat_si_details', 'hidden', true);
+            frm.set_df_property('no_vat_pi_details', 'hidden', true);
+        } else {
+            frm.set_df_property('no_vat_summary_tab', 'hidden', false);
+            frm.set_df_property('no_vat_si_details', 'hidden', false);
+            frm.set_df_property('no_vat_pi_details', 'hidden', false);
+        }
+    }
 });
+
+function update_tables(frm) {
+    remove_columns(frm, 'si_details', ['payment_type', 'net_purchase', 'total_vat', 'total_net_sell', 'total_net_purchase'])
+    remove_columns(frm, 'no_vat_si_details', ['payment_type', 'net_purchase', "debit", "credit", "against", 'total_vat', 'total_net_sell', 'total_net_purchase'])
+    remove_columns(frm, 'pi_details', ['payment_type', 'net_sell', 'total_vat', 'total_net_sell', 'total_net_purchase'])
+    remove_columns(frm, 'no_vat_pi_details', ['payment_type', 'net_sell', "debit", "credit", "against", 'total_vat', 'total_net_sell', 'total_net_purchase'])
+    remove_columns(frm, 'je_details', ['payment_type', "paid_date", 'total_vat', 'total_net_sell', 'total_net_purchase'])
+    remove_columns(frm, 'pe_details', ["paid_date", 'against_account', 'total_vat', 'total_net_sell', 'total_net_purchase'])
+    remove_columns(frm, 'si_details_totals', ['posting_date', 'paid_date', 'voucher_no', 'remarks', 'payment_type', 'against', 'tax_rate', 'debit', 'credit', 'against_account', 'net_sell', 'net_purchase', 'total_net_purchase'])
+    remove_columns(frm, 'pi_details_totals', ['posting_date', 'paid_date', 'voucher_no', 'remarks', 'payment_type', 'against', 'debit', 'credit', 'against_account', 'net_sell', 'net_purchase', 'total_net_sell'])
+    remove_columns(frm, 'je_details_totals', ['posting_date', 'paid_date', 'voucher_no', 'remarks', 'payment_type', 'against', 'debit', 'credit', 'against_account', 'net_sell', 'net_purchase'])
+    remove_columns(frm, 'pe_details_totals', ['posting_date', 'paid_date', 'voucher_no', 'remarks', 'payment_type', 'against', 'tax_rate', 'debit', 'credit', 'against_account', 'net_sell', 'net_purchase'])
+    $('.form-clickable-section').css('display', 'inherit')
+    $('.form-grid .with-filter').removeClass('with-filter')
+    $('.form-grid .filter-row').remove()
+    frm.refresh_field('pdf_tables')
+}
+
+function remove_columns(frm, tablename, fields) {
+    let columns_count = frm.fields_dict[tablename].grid.visible_columns.length - fields.length
+    console.log(columns_count)
+    let width_percent = 100 / columns_count
+    let width_px = 40 / columns_count
+    columns_labels = ""
+    columns_names = ""
+    //setTimeout(() => {
+    frm.fields_dict[tablename].grid.visible_columns = frm.fields_dict[tablename].grid.visible_columns.filter(function (cn) {
+        return !fields.includes(cn.fieldname);
+    });
+
+    frm.fields_dict[tablename].grid.wrapper.find('.col-xs-1').each((key, element) => {
+        $(element).removeClass('col-xs-1')
+        $(element).css('width', 'calc(' + width_percent.toString() + '% - ' + width_px.toString() + 'px)')
+    })
+    frm.fields_dict[tablename].grid.wrapper.find('.sortable-handle').each((key, element) => {
+        $(element).addClass('grid-static-col')
+        $(element).css('width', '40px' )
+    })
+    if(tablename.includes("totals")){
+        frm.fields_dict[tablename].grid.wrapper.find("[data-fieldname=tax_code], [data-fieldname=tax_rate]").each((key, elem) => {
+            if(["0", "0.000"].includes($(elem).find(".static-area div").html())){
+                $(elem).find(".static-area div").html("")
+            }
+        })
+    }
+    fields.forEach((field) => {
+        frm.fields_dict[tablename].grid.wrapper.find('.grid-static-col[data-fieldname='+field+']').each((key, element) => {
+            $(element).remove()
+        })
+    })
+    cur_frm.fields_dict[tablename].grid.wrapper.find('.grid-heading-row .grid-static-col').each((key, element) => {
+        if(element.title)
+            columns_labels += element.title + ","
+
+        if(element.dataset.fieldname)
+            columns_names += element.dataset.fieldname + ","
+    })
+    columns_labels = columns_labels.slice(0, -1).replace(__("Posting Date"), __("Date")).replace(__("Paid Date"), __("Paid")).replace(__("Voucher No"), __("Reference")).replace(__("Tax Code"), __("Code")).replace(__("Tax Rate"), __("Tax")).replace(__("Payment Type"), __("Type"))
+    columns_names = columns_names.slice(0, -1)
+    let exists = false
+    if(frm.doc.pdf_tables){
+        frm.doc.pdf_tables.forEach((table) => {
+            if(table.table_name == tablename){
+                frappe.model.set_value(table.doctype, table.name, 'columns', columns_labels + '|' + columns_names)
+                exists = true
+            }
+        })
+    }
+    if(!exists){
+        let child = cur_frm.add_child('pdf_tables')
+        frappe.model.set_value(child.doctype, child.name, 'table_name', tablename)
+        frappe.model.set_value(child.doctype, child.name, 'columns', columns_labels + '|' + columns_names)
+    }
+    //}, 500);
+}
 
 var new_vat_percent = false;
 function get_tax_rates(frm) {
@@ -127,13 +243,28 @@ function get_values(frm) {
                 if (r.message) {
                     allow_trigger = false;
                     let res = r.message;
-                    frm.set_value('purchase_invoice_summary', res.summary_purchase_invoice)
+                    console.log(res);
+
+                    /*frm.set_value('purchase_invoice_summary', res.summary_purchase_invoice)
                     frm.set_value('sales_invoice_summary', res.summary_sales_invoice_new)
                     frm.set_value('sales_invoice_summary_2023', res.summary_sales_invoice_old)
                     frm.set_value('journal_entry_summary', res.summary_journal_entry_new)
-                    frm.set_value('journal_entry_summary_2023', res.summary_journal_entry_old)
-                    frm.set_value('no_vat_summary', res.summary_no_vat)
-                    let total = (res.net_sell.total_credit - res.net_sell.total_debit + res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);// - (res.net_purchase.total_debit - res.net_purchase.total_credit);
+                    frm.set_value('journal_entry_summary_2023', res.summary_journal_entry_old)*/
+                    frm.set_value('si_details', res.si_gl_entries);
+                    frm.set_value('pi_details', res.pi_gl_entries);
+                    frm.set_value('je_details', res.je_gl_entries);
+                    frm.set_value('pe_details', res.pe_gl_entries);
+                    if(!frm.doc.vat_type.includes("flat rate")) {
+                        frm.set_value('no_vat_si_details', res.no_vat_si_entries);
+                        frm.set_value('no_vat_pi_details', res.no_vat_pi_entries);
+                        frm.set_value('si_details_totals', res.si_vat_summary);
+                        frm.set_value('pi_details_totals', res.pi_vat_summary);
+                        frm.set_value('je_details_totals', res.je_vat_summary);
+                        frm.set_value('pe_details_totals', res.pe_vat_summary);
+                        frm.set_value('no_vat_summary', res.summary_no_vat)
+                    }
+                    
+                    let total = (res.net_sell.total_credit - res.net_sell.total_debit + (res.no_vat_sell.total_debit - res.no_vat_sell.total_credit));// - (res.net_purchase.total_debit - res.net_purchase.total_credit);
                     frm.set_value('total_revenue', total);
                     // get_total(frm, "viewVAT_205", 'non_taxable_revenue');
                     // Deductions
@@ -156,7 +287,7 @@ function get_values(frm) {
                     frm.set_value("grants", 0);
                     frm.set_value("donations", 0);
                     if (frm.doc.vat_type.includes("effective")) {
-                        frm.set_value('non_taxable_revenue', res.no_vat_sell.total_credit - res.no_vat_sell.total_debit);
+                        frm.set_value('non_taxable_revenue', res.no_vat_sell.total_debit - res.no_vat_sell.total_credit);
                         let normal_tax_2023 = res.sums_by_tax_code['302'] ? (res.sums_by_tax_code['302'].total_credit - res.sums_by_tax_code['302'].total_debit) : 0;
                         let normal_rate_2023 = frm.doc.normal_rate_2023;
                         let reduced_tax_2023 = res.sums_by_tax_code['312'] ? (res.sums_by_tax_code['312'].total_credit - res.sums_by_tax_code['312'].total_debit) : 0;
@@ -229,6 +360,7 @@ function get_values(frm) {
                         update_taxable_revenue(frm);
                         update_payable_tax(frm);
                         update_taxable_revenue(frm);
+                        update_tables(frm);
                     }, 200);
                     setTimeout(function () {
                         allow_trigger = true;

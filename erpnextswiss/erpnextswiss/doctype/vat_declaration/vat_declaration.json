@@ -8,6 +8,8 @@
  "engine": "InnoDB",
  "field_order": [
   "vat_tab",
+  "section_break_tables",
+  "pdf_tables",
   "vat_declaration_options",
   "title",
   "company",
@@ -92,13 +94,25 @@
   "sales_invoice_summary_section",
   "sales_invoice_summary_2023",
   "sales_invoice_summary",
+  "si_details",
+  "no_vat_si_details",
+  "si_details_totals",
   "purchase_invoice_summary_tab",
   "purchase_invoice_summary_section",
   "purchase_invoice_summary",
-  "journal_entry_summary_section",
+  "pi_details",
+  "no_vat_pi_details",
+  "pi_details_totals",
   "journal_entry_summary_tab",
+  "journal_entry_summary_section",
   "journal_entry_summary_2023",
   "journal_entry_summary",
+  "je_details",
+  "je_details_totals",
+  "payment_entry_summary_tab",
+  "payment_entry_summary_section",
+  "pe_details",
+  "pe_details_totals",
   "no_vat_summary_tab",
   "no_vat_summary_section",
   "no_vat_summary"
@@ -625,7 +639,8 @@
    "fieldname": "sales_invoice_summary",
    "fieldtype": "Table",
    "options": "VAT Declaration Sales Invoice Summary 2024",
-   "print_hide": 1
+   "print_hide": 1,
+   "read_only": 1
   },
   {
    "fieldname": "purchase_invoice_summary_tab",
@@ -638,17 +653,21 @@
    "fieldtype": "Table",
    "label": "Purchase Invoices",
    "options": "VAT Declaration Purchase Invoice Summary",
-   "print_hide": 1
+   "print_hide": 1,
+   "read_only": 1
   },
   {
    "fieldname": "journal_entry_summary_tab",
-   "fieldtype": "Section Break"
+   "fieldtype": "Tab Break",
+   "label": "Journal Entry Journal",
+   "print_hide": 1
   },
   {
    "fieldname": "journal_entry_summary",
    "fieldtype": "Table",
    "options": "VAT Declaration Journal Entry Summary 2024",
-   "print_hide": 1
+   "print_hide": 1,
+   "read_only": 1
   },
   {
    "fieldname": "no_vat_summary_tab",
@@ -661,7 +680,8 @@
    "fieldtype": "Table",
    "label": "No VAT",
    "options": "VAT Declaration No VAT Summary",
-   "print_hide": 1
+   "print_hide": 1,
+   "read_only": 1
   },
   {
    "fieldname": "vat_declaration_options",
@@ -677,9 +697,7 @@
   },
   {
    "fieldname": "journal_entry_summary_section",
-   "fieldtype": "Tab Break",
-   "label": "Journal Entry Journal",
-   "print_hide": 1
+   "fieldtype": "Section Break"
   },
   {
    "fieldname": "no_vat_summary_section",
@@ -690,19 +708,112 @@
    "fieldtype": "Table",
    "label": "Sales Invoices",
    "options": "VAT Declaration Sales Invoice Summary",
-   "print_hide": 1
+   "print_hide": 1,
+   "read_only": 1
   },
   {
    "fieldname": "journal_entry_summary_2023",
    "fieldtype": "Table",
    "label": "Journal Entries",
    "options": "VAT Declaration Journal Entry Summary",
+   "print_hide": 1,
+   "read_only": 1
+  },
+  {
+   "fieldname": "si_details",
+   "fieldtype": "Table",
+   "label": "Details",
+   "options": "VAT Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pi_details",
+   "fieldtype": "Table",
+   "label": "Details",
+   "options": "VAT Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "je_details",
+   "fieldtype": "Table",
+   "label": "Details",
+   "options": "VAT Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "payment_entry_summary_tab",
+   "fieldtype": "Tab Break",
+   "label": "Payment Entry Journal",
    "print_hide": 1
+  },
+  {
+   "fieldname": "payment_entry_summary_section",
+   "fieldtype": "Section Break",
+   "label": "Payment Entry Deductions"
+  },
+  {
+   "fieldname": "pe_details",
+   "fieldtype": "Table",
+   "label": "Details",
+   "options": "VAT Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "no_vat_si_details",
+   "fieldtype": "Table",
+   "label": "No VAT Details",
+   "options": "VAT Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "no_vat_pi_details",
+   "fieldtype": "Table",
+   "label": "No VAT Details",
+   "options": "VAT Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "si_details_totals",
+   "fieldtype": "Table",
+   "label": "Totals",
+   "options": "VAT Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pi_details_totals",
+   "fieldtype": "Table",
+   "label": "Totals",
+   "options": "VAT Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "je_details_totals",
+   "fieldtype": "Table",
+   "label": "Totals",
+   "options": "VAT Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pe_details_totals",
+   "fieldtype": "Table",
+   "label": "Totals",
+   "options": "VAT Detail",
+   "read_only": 1
+  },
+  {
+   "fieldname": "pdf_tables",
+   "fieldtype": "Table",
+   "label": "PDF Tables",
+   "options": "VAT Declaration PDF Columns"
+  },
+  {
+   "fieldname": "section_break_tables",
+   "fieldtype": "Section Break"
   }
  ],
  "is_submittable": 1,
  "links": [],
- "modified": "2024-03-06 09:57:20.251198",
+ "modified": "2024-07-10 17:38:54.191954",
  "modified_by": "Administrator",
  "module": "ERPNextSwiss",
  "name": "VAT Declaration",
@@ -752,6 +863,5 @@
  "sort_field": "modified",
  "sort_order": "DESC",
  "states": [],
- "title_field": "title",
- "track_changes": 1
+ "title_field": "title"
 }

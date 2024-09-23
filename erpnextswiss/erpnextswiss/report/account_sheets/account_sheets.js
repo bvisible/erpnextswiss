@@ -1,11 +1,7 @@
-// Copyright (c) 2017-2022, libracore (https://www.libracore.com) and contributors
-// For license information, please see license.txt
-/* eslint-disable */
-
 frappe.query_reports["Account Sheets"] = {
     "filters": [
         {
-            "fieldname":"company",
+            "fieldname": "company",
             "label": __("Company"),
             "fieldtype": "Link",
             "options": "Company",
@@ -13,38 +9,53 @@ frappe.query_reports["Account Sheets"] = {
             "default": frappe.defaults.get_user_default("company") || frappe.defaults.get_global_default("company")
         },
         {
-            "fieldname":"from_date",
+            "fieldname": "from_date",
             "label": __("From Date"),
             "fieldtype": "Date",
             "default": (new Date(new Date().getFullYear(), 0, 1)), /* use first day of current year */
             "reqd": 1
         },
         {
-            "fieldname":"to_date",
+            "fieldname": "to_date",
             "label": __("To Date"),
             "fieldtype": "Date",
             "default": frappe.datetime.get_today(),
             "reqd": 1
         },
         {
-            "fieldname":"from_account",
+            "fieldname": "from_account",
             "label": __("From Account"),
-            "fieldtype": "Int"
+            "fieldtype": "Link",
+            "options": "Account",
+            "get_query": function() {
+                return {
+                    filters: {
+                        "is_group": 0
+                    }
+                };
+            }
         },
         {
-            "fieldname":"to_account",
+            "fieldname": "to_account",
             "label": __("To Account"),
-            "fieldtype": "Int"
+            "fieldtype": "Link",
+            "options": "Account",
+            "get_query": function() {
+                return {
+                    filters: {
+                        "is_group": 0
+                    }
+                };
+            }
         },
         {
-            "fieldname":"cost_center",
+            "fieldname": "cost_center",
             "label": __("Cost Center"),
             "fieldtype": "Link",
             "options": "Cost Center"
         },
-
         {
-            "fieldname":"max_rows",
+            "fieldname": "max_rows",
             "label": __("Max Rows In Report (Ignored In Print"),
             "fieldtype": "Int",
             "default": 1000,
@@ -58,7 +69,7 @@ frappe.query_reports["Account Sheets"] = {
             }
         },
         {
-            "fieldname":"remark_max_length",
+            "fieldname": "remark_max_length",
             "label": __("Remark Max Length"),
             "fieldtype": "Int",
             "default": 100,
@@ -72,10 +83,16 @@ frappe.query_reports["Account Sheets"] = {
             }
         },
         {
-            "fieldname":"hide_null_accounts",
+            "fieldname": "hide_null_accounts",
             "label": __("Hide Null Accounts"),
             "fieldtype": "Check",
             "default": 1
+        },
+        {
+            "fieldname": "include_cancelled",
+            "label": __("Show Cancelled Entries"),
+            "fieldtype": "Check",
+            "default": 0
         }
     ]
 };
