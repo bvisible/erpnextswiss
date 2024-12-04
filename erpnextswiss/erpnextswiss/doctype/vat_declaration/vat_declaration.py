@@ -488,14 +488,16 @@ def handle_entries(dt, dn, flat, sums_by_tax_code, sell_account_start, sell_acco
         else:
             account_number = frappe.db.get_value("Account", gl_entry.account, "account_number")
             if not account_number:
+                account_link = frappe.utils.get_link_to_form("Account", gl_entry.account)
+                doc_link = frappe.utils.get_link_to_form(dt, dn)
+
                 frappe.throw(
-                    _("Le compte {0} utilisé dans {1} {2} n'a pas de numéro de compte configuré. Veuillez :\n"
+                    _("Le compte {0} utilisé dans {1} n'a pas de numéro de compte configuré. Veuillez :\n"
                       "1. Aller dans la configuration du compte\n"
                       "2. Ajouter un numéro de compte dans le champ 'Numéro de compte'\n"
                       "3. Sauvegarder les modifications").format(
-                        frappe.bold(gl_entry.account),
-                        dt,  # type de document (Sales Invoice, Journal Entry, etc.)
-                        dn   # numéro du document
+                        account_link,
+                        doc_link
                     ),
                     title=_("Numéro de compte manquant")
                 )
