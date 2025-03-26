@@ -45,3 +45,15 @@ frappe.listview_settings['Payment Reminder'] = {
         } 
     }
 }
+
+function create_payment_reminders(values) {
+    frappe.call({
+        'method': "erpnextswiss.erpnextswiss.doctype.payment_reminder.payment_reminder.enqueue_create_payment_reminders",
+        'args': {
+            'company': values.company
+        },
+        'callback': function(response) {
+            frappe.show_alert( __("Payment Reminders created") );
+        }
+    });
+}

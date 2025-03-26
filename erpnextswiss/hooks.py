@@ -18,7 +18,9 @@ app_license = "AGPL"
 # app_include_css = "/assets/erpnextswiss/css/erpnextswiss.css"
 app_include_js = [
     "/assets/erpnextswiss/js/swiss_common.js",
-    "/assets/erpnextswiss/js/iban.js"
+    "/assets/erpnextswiss/js/iban.js",
+    "/assets/erpnextswiss/js/email.js",
+    "assets/js/erpnextswiss_templates.min.js"
 ]
 
 # include js, css files in header of web template
@@ -40,9 +42,13 @@ doctype_js = {
     "Supplier":         "public/js/supplier.js",
     "Customer":         "public/js/customer.js",
     "Address":          "public/js/address.js",
-    "Holiday List":     "public/js/holiday_list.js"
+    "Holiday List":     "public/js/holiday_list.js",
+    "Shipment":         "public/js/shipment.js"
 }
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
+doctype_list_js = {
+    "Purchase Invoice" : "public/js/purchase_invoice_list.js"
+}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
 
@@ -55,7 +61,12 @@ jenv = {
         "get_week_from_date:erpnextswiss.erpnextswiss.jinja.get_week_from_date",
         "strip_html:erpnextswiss.erpnextswiss.jinja.strip_html",
         "get_accounts_receivable:erpnextswiss.erpnextswiss.jinja.get_accounts_receivable",
-        "get_primary_company_address:erpnextswiss.scripts.crm_tools.get_primary_company_address"
+        "get_primary_company_address:erpnextswiss.scripts.crm_tools.get_primary_company_address",
+        "get_primary_customer_address:erpnextswiss.scripts.crm_tools.get_primary_customer_address",
+        "get_primary_supplier_address:erpnextswiss.scripts.crm_tools.get_primary_supplier_address",
+        "get_vat_control_details:erpnextswiss.erpnextswiss.report.kontrolle_mwst.kontrolle_mwst.get_vat_control_details",
+        "get_planzer_barcode:erpnextswiss.erpnextswiss.planzer.get_planzer_barcode",
+        "get_planzer_qr_code:erpnextswiss.erpnextswiss.planzer.get_planzer_qr_code"
     ]
 }
 
@@ -117,6 +128,12 @@ after_install = "erpnextswiss.setup.install.after_install"
 #         "on_trash": "method"
 #    }
 # }
+doc_events = {
+    "Contact": {
+        "on_update": "erpnextswiss.erpnextswiss.nextcloud.contacts.send_contact_to_nextcloud",
+        "on_trash": "erpnextswiss.erpnextswiss.nextcloud.contacts.delete_contact_from_nextcloud"
+    }
+}
 
 # Scheduled Tasks
 # ---------------
@@ -140,7 +157,8 @@ after_install = "erpnextswiss.setup.install.after_install"
 # }
 scheduler_events = {
     "daily": [
-        "erpnextswiss.erpnextswiss.doctype.inspection_equipment.inspection_equipment.check_calibration_status"
+        "erpnextswiss.erpnextswiss.doctype.inspection_equipment.inspection_equipment.check_calibration_status",
+        "erpnextswiss.erpnextswiss.ebics.sync"
     ],
     "hourly": [
         "erpnextswiss.erpnextswiss.edi.process_incoming"

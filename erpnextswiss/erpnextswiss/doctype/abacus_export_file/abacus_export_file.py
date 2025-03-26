@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) 2017-2023, libracore (https://www.libracore.com) and contributors
+# Copyright (c) 2017-2024, libracore (https://www.libracore.com) and contributors
 # For license information, please see license.txt
 
 from __future__ import unicode_literals
@@ -8,10 +8,19 @@ from frappe.model.document import Document
 import html          # used to escape xml content
 import ast
 from frappe.utils import cint
+from frappe.utils.data import rounded
+from erpnextswiss.erpnextswiss.finance import get_booking_pairs
+from frappe import _
+from bs4 import BeautifulSoup
 
 class AbacusExportFile(Document):
     def submit(self):
-        self.get_transactions()
+        if cint(self.aggregated):
+            # aggregated method: do not pick and mark records (based on general ledger)
+            self.get_account_balances()
+        else:
+            # transaction-based 
+            self.get_transactions()
         return
     
     def on_cancel(self):
@@ -27,6 +36,14 @@ class AbacusExportFile(Document):
         
     # find all transactions, add the to references and mark as collected
     def get_transactions(self):
+        # check elimination of zero-sum transactions
+        if cint(self.exclude_zero_sum_txs) == 1:
+            sinv_filter = """AND `tabSales Invoice`.`grand_total` != 0"""
+            pinv_filter = """AND `tabPurchase Invoice`.`grand_total` != 0"""
+        else:
+            sinv_filter = ""
+            pinv_filter = ""
+             
         # get all documents
         if cint(self.debtors_only):
             document_query = """SELECT 
@@ -38,6 +55,7 @@ class AbacusExportFile(Document):
                     AND `tabSales Invoice`.`docstatus` = 1
                     AND `tabSales Invoice`.`exported_to_abacus` = 0
                     AND `tabSales Invoice`.`company` = '{company}'
+                    {sinv_filter}
                 UNION SELECT 
                     "Payment Entry" AS `dt`,
                     `tabPayment Entry`.`name` AS `dn`
@@ -62,7 +80,7 @@ class AbacusExportFile(Document):
                            AND `tabJournal Entry Account`.`party_type` = 'Customer') > 0
                     AND `tabJournal Entry`.`company` = '{company}';""".format(
                     start_date=self.from_date, end_date=self.to_date, 
-                    company=self.company)
+                    company=self.company, sinv_filter=sinv_filter)
         else:
             document_query = """SELECT 
                         "Sales Invoice" AS `dt`,
@@ -73,6 +91,7 @@ class AbacusExportFile(Document):
                         AND `tabSales Invoice`.`docstatus` = 1
                         AND `tabSales Invoice`.`exported_to_abacus` = 0
                         AND `tabSales Invoice`.`company` = '{company}'
+                        {sinv_filter}
                     UNION SELECT 
                         "Purchase Invoice" AS `dt`,
                         `tabPurchase Invoice`.`name` AS `dn`
@@ -82,6 +101,7 @@ class AbacusExportFile(Document):
                         AND `tabPurchase Invoice`.`docstatus` = 1
                         AND `tabPurchase Invoice`.`exported_to_abacus` = 0
                         AND `tabPurchase Invoice`.`company` = '{company}'
+                        {pinv_filter}
                     UNION SELECT 
                         "Payment Entry" AS `dt`,
                         `tabPayment Entry`.`name` AS `dn`
@@ -101,7 +121,7 @@ class AbacusExportFile(Document):
                         AND `tabJournal Entry`.`exported_to_abacus` = 0
                         AND `tabJournal Entry`.`company` = '{company}';""".format(
                         start_date=self.from_date, end_date=self.to_date, 
-                        company=self.company)
+                        company=self.company, sinv_filter=sinv_filter, pinv_filter=pinv_filter)
         
         docs = frappe.db.sql(document_query, as_dict=True)
         
@@ -166,6 +186,39 @@ class AbacusExportFile(Document):
             return frappe.get_value("Account", account_name, "account_number")
         else:
             return None
+    
+    # aggregation by accounts
+    def get_account_balances(self):
+        # for each account, compute period balance (see trial balance)
+        sql_query = """
+            SELECT
+                `tabGL Entry`.`account`,
+                `tabAccount`.`account_number`, 
+                SUM(`tabGL Entry`.`debit`) AS `total_debit`,
+                SUM(`tabGL Entry`.`credit`) AS `total_credit`
+            FROM `tabGL Entry`
+            LEFT JOIN `tabAccount` ON `tabAccount`.`name` = `tabGL Entry`.`account`
+            WHERE
+                `tabAccount`.`company` = "{company}"
+                AND `tabGL Entry`.`posting_date` BETWEEN "{from_date}" AND "{to_date}"
+            GROUP BY `tabGL Entry`.`account`
+            ORDER BY `tabAccount`.`name` ASC;
+        """.format(company=self.company, from_date=self.from_date, to_date=self.to_date)
+        
+        balances = frappe.db.sql(sql_query, as_dict=True)
+        for balance in balances:
+            self.append("balances", {
+                'account': balance.get("account"),
+                'account_number': balance.get("account_number"),
+                'debit': balance.get("total_debit"),
+                'credit': balance.get("total_credit"),
+                'balance': balance.get("total_debit") - balance.get("total_credit")
+            })
+        
+        # apply
+        self.save()
+        
+        return
         
     # prepare transfer file
     def render_transfer_file(self, restrict_currencies=None):
@@ -191,153 +244,152 @@ class AbacusExportFile(Document):
     # get aggregated transactions 
     def get_aggregated_transactions(self):
         transactions = []
-        sinvs = self.get_docs([ref.__dict__ for ref in self.references], "Sales Invoice")
-        sql_query = """SELECT `tabSales Invoice`.`name`, 
-                  `tabSales Invoice`.`posting_date`, 
-                  `tabSales Invoice`.`currency`, 
-                  SUM(`tabSales Invoice`.`base_grand_total`) AS `debit`, 
-                  `tabSales Invoice`.`debit_to`,
-                  SUM(`tabSales Invoice`.`base_net_total`) AS `income`, 
-                  `tabSales Invoice Item`.`income_account`,  
-                  SUM(`tabSales Invoice`.`total_taxes_and_charges`) AS `tax`, 
-                  `tabSales Taxes and Charges`.`account_head`,
-                  `tabSales Invoice`.`taxes_and_charges`,
-                  `tabSales Taxes and Charges`.`rate`,
-                  CONCAT(IFNULL(`tabSales Invoice`.`debit_to`, ""),
-                    IFNULL(`tabSales Invoice Item`.`income_account`, ""),  
-                    IFNULL(`tabSales Taxes and Charges`.`account_head`, "")
-                  ) AS `key`
-                FROM `tabSales Invoice`
-                LEFT JOIN `tabSales Invoice Item` ON `tabSales Invoice`.`name` = `tabSales Invoice Item`.`parent`
-                LEFT JOIN `tabSales Taxes and Charges` ON `tabSales Invoice`.`name` = `tabSales Taxes and Charges`.`parent`
-                WHERE `tabSales Invoice`.`name` IN ({sinvs})
-                GROUP BY `key`""".format(sinvs=self.get_sql_list(sinvs))
-        base_currency = frappe.get_value("Company", self.company, "default_currency")
-        sinv_items = frappe.db.sql(sql_query, as_dict=True)
-        for item in sinv_items:
-            if item.taxes_and_charges:
-                tax_record = frappe.get_doc("Sales Taxes and Charges Template", item.taxes_and_charges)
-                tax_code = tax_record.tax_code
-            else:
-                tax_code = None
-            # create content
+        
+        # first account is the collective account, following will be against accounts; prevent index issue on empty periods
+        if len(self.balances) < 2:
+            return transactions
+        
+        """ Method: export as opening balance with a balance per account
+        # compile split-account records
+        against_singles = []
+        for balance in self.balances[1:]:
+            against_singles.append({
+                'account': balance.get('account_number'),
+                'amount': rounded(balance.get('balance'), 2),
+                'currency': self.currency
+            })
+        
+        # create transaction data
+        transactions.append({
+            'account': self.balances[0].get('account_number'), 
+            'amount': rounded(self.balances[0].get('balance'), 2), 
+            'against_singles': against_singles,
+            'debit_credit': "D", 
+            'date': self.to_date, 
+            'currency': self.currency, 
+            'tax_account': None, 
+            'tax_amount': None, 
+            'tax_rate': 0, 
+            'tax_code': None, 
+            'tax_currency': self.currency,
+            'text1': "Aggregated {0}".format(self.name),
+            'exchange_rate': 1
+        })
+        """
+        
+        """ Method: generate booking pairs """
+        vouchers = frappe.db.sql("""
+            SELECT `voucher_type`, `voucher_no`
+            FROM `tabGL Entry`
+            WHERE 
+                `tabGL Entry`.`company` = "{company}"
+                AND `tabGL Entry`.`posting_date` BETWEEN "{from_date}" AND "{to_date}"
+            GROUP BY `tabGL Entry`.`voucher_no`;
+            """.format(company=self.company, from_date=self.from_date, to_date=self.to_date), as_dict=True)
+        
+        # structure: key is "account|account", values is a dict with {'amount', 'exchange_rate', 'foreign_amount?}
+        aggregates_booking_pairs = {}
+        
+        f = open("/tmp/booking_pairs.csv", "w")
+        f.write("{0};{1};{2};{3};{4}\n".format(
+                    "debit_account", 
+                    "credit_account", 
+                    "amount", 
+                    "foreign_amount",
+                    "voucher_no"))
+        for voucher in vouchers:
+            new_booking_pairs = get_booking_pairs(voucher['voucher_type'], voucher['voucher_no'])
+            
+            for k, v in new_booking_pairs.items():
+                if k not in aggregates_booking_pairs:
+                    aggregates_booking_pairs[k] = v
+                else:
+                    aggregates_booking_pairs[k]['amount'] += v['amount']
+                    aggregates_booking_pairs[k]['foreign_amount'] += v['foreign_amount']
+        
+                # for debug only
+                f.write("{0};{1};{2};{3};{4}\n".format(
+                    v.get("debit_account"), 
+                    v.get("credit_account"), 
+                    v.get("amount"), 
+                    v.get("foreign_amount"),
+                    voucher.get("voucher_no")))
+                
+        f.close()
+        
+        # create transaction data
+        for k, v in aggregates_booking_pairs.items():
+            # determine if one account is a tax account
+            debit_account_doc = frappe.get_doc("Account", v.get('debit_account'))
+            credit_account_doc = frappe.get_doc("Account", v.get('credit_account'))
+            if debit_account_doc.account_type == "Tax" or credit_account_doc.account_type == "Tax":
+                # skip tax accunt records (will be integrated
+                continue
+                
+            # determine tax rate
+            tax_rate = debit_account_doc.tax_rate or credit_account_doc.tax_rate or 0
+            tax_account = None
+            tax_code = None
+            if tax_rate:
+                tax_accounts = frappe.get_all("Account", 
+                    filters={
+                        'company': self.company,
+                        'account_type': 'Tax',
+                        'tax_rate': tax_rate
+                    },
+                    fields=['name']
+                )
+                if len(tax_accounts) > 0:
+                    tax_account = tax_accounts[0]['name']
+                tax_templates = frappe.db.sql("""
+                    SELECT `tabSales Taxes and Charges Template`.`tax_code`
+                    FROM `tabSales Taxes and Charges`
+                    LEFT JOIN `tabSales Taxes and Charges Template` ON `tabSales Taxes and Charges`.`parent` = `tabSales Taxes and Charges Template`.`name`
+                    WHERE
+                        `tabSales Taxes and Charges`.`parenttype` = "Sales Taxes and Charges Template"
+                        AND `tabSales Taxes and Charges`.`rate` = {tax_rate};
+                    """.format(tax_rate=tax_rate), as_dict=True)
+                if len(tax_templates) > 0:
+                    tax_code = tax_templates[0]['tax_code']
+                    
+            net_amount = rounded(v.get('amount'), 2)
+            tax_amount = rounded((net_amount * (tax_rate / 100)), 2)
+            gross_amount = rounded((net_amount + tax_amount), 2)
+            
+            foreign_gross_amount = rounded((gross_amount * v.get('exchange_rate')), 2)
+            foreign_net_amount = rounded((v.get('amount') * v.get('exchange_rate')), 2)
+            foreign_tax_amount = foreign_gross_amount - foreign_net_amount
+            
+            # determine foreign currency
+            foreign_currency = debit_account_doc.account_currency \
+                if debit_account_doc.account_currency != self.currency \
+                else credit_account_doc.account_currency
+                
             transactions.append({
-                'account': self.get_account_number(item.debit_to), 
-                'amount': item.debit, 
+                'account': self.get_account_number(v.get('debit_account')), 
+                'amount': foreign_gross_amount, 
+                'key_amount': gross_amount,
+                'exchange_rate': v.get('exchange_rate'),
                 'against_singles': [{
-                    'account': self.get_account_number(item.income_account),
-                    'amount': item.income,
-                    'currency': item.currency
+                    'account': self.get_account_number(v.get('credit_account')),
+                    'amount': foreign_net_amount,
+                    'key_amount': net_amount,
+                    'currency': self.currency
                 }],
                 'debit_credit': "D", 
                 'date': self.to_date, 
-                'currency': item.currency, 
-                'tax_account': self.get_account_number(item.account_head) or None, 
-                'tax_amount': item.tax or None, 
-                'tax_rate': item.rate or None, 
-                'tax_code': tax_code or "312", 
-                'tax_currency': base_currency,
-                'text1': item.name
+                'currency': foreign_currency, 
+                'key_currency': self.currency,
+                'tax_account': self.get_account_number(tax_account), 
+                'tax_amount': tax_amount, 
+                'tax_rate': tax_rate, 
+                'tax_code': tax_code, 
+                'tax_currency': self.currency,
+                'text1': "Aggregated {0} ({1}. {2})".format(k, tax_rate, tax_amount)
             })
         
-        pinvs = self.get_docs([ref.__dict__ for ref in self.references], "Purchase Invoice")
-        sql_query = """SELECT `tabPurchase Invoice`.`name`, 
-              `tabPurchase Invoice`.`posting_date`, 
-              `tabPurchase Invoice`.`currency`, 
-              SUM(`tabPurchase Invoice`.`base_grand_total`) AS `credit`, 
-              `tabPurchase Invoice`.`credit_to`,
-              SUM(`tabPurchase Invoice`.`base_net_total`) AS `expense`, 
-              `tabPurchase Invoice Item`.`expense_account`,  
-              SUM(`tabPurchase Invoice`.`base_total_taxes_and_charges`) AS `tax`, 
-              `tabPurchase Taxes and Charges`.`account_head`,
-              `tabPurchase Invoice`.`taxes_and_charges`,
-              `tabPurchase Taxes and Charges`.`rate`,
-              CONCAT(IFNULL(`tabPurchase Invoice`.`credit_to`, ""),
-                IFNULL(`tabPurchase Invoice Item`.`expense_account`, ""),  
-                IFNULL(`tabPurchase Taxes and Charges`.`account_head`, "")
-              ) AS `key`
-            FROM `tabPurchase Invoice`
-            LEFT JOIN `tabPurchase Invoice Item` ON `tabPurchase Invoice`.`name` = `tabPurchase Invoice Item`.`parent`
-            LEFT JOIN `tabPurchase Taxes and Charges` ON `tabPurchase Invoice`.`name` = `tabPurchase Taxes and Charges`.`parent`
-            WHERE `tabPurchase Invoice`.`name` IN ({pinvs})
-            GROUP BY `key`""".format(pinvs=self.get_sql_list(pinvs))
+        # note account1|account2 and account2|account1 are recorded separately
         
-        pinv_items = frappe.db.sql(sql_query, as_dict=True)
-        # create item entries
-        for item in pinv_items:
-            if item.taxes_and_charges:
-                tax_record = frappe.get_doc("Purchase Taxes and Charges Template", item.taxes_and_charges)
-                tax_code = tax_record.tax_code
-            else:
-                tax_code = None
-            # create content
-            transactions.append({
-                'account': self.get_account_number(item.credit_to), 
-                'amount': item.credit, 
-                'against_singles': [{
-                    'account': self.get_account_number(item.expense_account),
-                    'amount': item.expense,
-                    'currency': item.currency
-                }],
-                'debit_credit': "C", 
-                'date': self.to_date, 
-                'currency': item.currency, 
-                'tax_account': self.get_account_number(item.account_head) or None, 
-                'tax_amount': item.tax or None, 
-                'tax_rate': item.rate or None, 
-                'tax_currency': base_currency,
-                'tax_code': tax_code or "312", 
-                'text1': item.name
-            })
-            
-        # add payment entry transactions
-        pes = self.get_docs([ref.__dict__ for ref in self.references], "Payment Entry")
-        sql_query = """SELECT `tabPayment Entry`.`name`,
-                  `tabPayment Entry`.`posting_date`,
-                  `tabPayment Entry`.`paid_from_account_currency` AS `currency`,
-                  SUM(`tabPayment Entry`.`paid_amount`) AS `amount`, 
-                  `tabPayment Entry`.`paid_from`,
-                  `tabPayment Entry`.`paid_to`,
-                  CONCAT(IFNULL(`tabPayment Entry`.`paid_from`, ""),
-                    IFNULL(`tabPayment Entry`.`paid_to`, "")
-                  ) AS `key`
-                FROM `tabPayment Entry`
-                WHERE `tabPayment Entry`.`name` IN ({pes})
-                GROUP BY `key`
-            """.format(pes=self.get_sql_list(pes))
-
-        pe_items = frappe.db.sql(sql_query, as_dict=True)
-        
-        # create item entries
-        for item in pe_items:
-            pe_record = frappe.get_doc("Payment Entry", item.name)
-            # create content
-            transaction = {
-                'account': self.get_account_number(item.paid_from), 
-                'amount': item.amount, 
-                'against_singles': [{
-                    'account': self.get_account_number(item.paid_to),
-                    'amount': item.amount,
-                    'currency': pe_record.paid_to_account_currency
-                }],
-                'debit_credit': "C", 
-                'date': self.to_date, 
-                'currency': pe_record.paid_from_account_currency, 
-                'tax_account': None, 
-                'tax_amount': None, 
-                'tax_rate': None, 
-                'tax_code': None, 
-                'text1': item.name
-            }
-            # append deductions
-            for deduction in pe_record.deductions:
-                transaction['against_singles'].append({
-                    'account': self.get_account_number(deduction.account),
-                    'amount': deduction.amount,
-                    'currency': item.currency                
-                })
-            # insert transaction
-            transactions.append(transaction)        
         return transactions
 
 
@@ -364,6 +416,10 @@ class AbacusExportFile(Document):
                 WHERE `tabSales Invoice`.`name` IN ({sinvs});""".format(sinvs=self.get_sql_list(sinvs))
         sinv_items = frappe.db.sql(sql_query, as_dict=True)    
         for item in sinv_items:
+            # if this is a zero-sum transaction, skip
+            if item['debit'] == 0:
+                continue
+                
             if item.taxes_and_charges:
                 tax_record = frappe.get_doc("Sales Taxes and Charges Template", item.taxes_and_charges)
                 tax_code = tax_record.tax_code
@@ -384,19 +440,23 @@ class AbacusExportFile(Document):
                 FROM `tabSales Invoice Item`
                 WHERE `parent` = "{sinv}"
                 GROUP BY `income_account`;""".format(sinv=item.name), as_dict=True):
-                against_positions.append({
-                    'account': self.get_account_number(account['income_account']),
-                    'amount': account['amount'],
-                    'currency': item.currency,
-                    'key_amount': account['key_amount'],
-                    'key_currency': base_currency
-                })
+                if account['amount']:               # only append non-zero entries
+                    tax_amount = rounded((account['amount'] * (item.rate or 0) / 100), 2)
+                    against_positions.append({
+                        'account': self.get_account_number(account['income_account']),
+                        'amount': rounded(account['amount'], 2),
+                        'currency': item.currency,
+                        'key_amount': rounded(account['key_amount'], 2),
+                        'key_currency': base_currency,
+                        'tax_amount': tax_amount,
+                        'key_tax_amount': rounded((tax_amount * item.conversion_rate), 2)
+                    })
             
             _tx = {
                 'account': self.get_account_number(item.debit_to), 
-                'amount': item.base_debit, 
+                'amount': rounded(item.base_debit, 2), 
                 'currency': base_currency, 
-                'key_amount': item.base_debit, 
+                'key_amount': rounded(item.base_debit, 2), 
                 'key_currency': base_currency,
                 'exchange_rate': item.conversion_rate,
                 'against_singles': against_positions,
@@ -404,19 +464,21 @@ class AbacusExportFile(Document):
                 'date': item.posting_date, 
                 'tax_account': self.get_account_number(item.account_head) or None, 
                 # 'tax_amount': item.tax or None,    # this takes the complete tax amount
-                'tax_amount': None,                  # calculate on the basis of the item
-                'tax_rate': item.rate or None, 
+                # 'tax_amount': None,                  # calculate on the basis of the item
+                'tax_amount': (item.base_debit * (item.rate or 0) / 100),
+                'tax_rate': rounded(item.rate, 2) if item.rate else 0, 
                 'tax_currency': base_currency,
                 'tax_code': tax_code or "312", 
                 'text1': html.escape(item.name),
                 'text2': text2
             }
-                
+            
             if not restrict_currencies or item.currency in restrict_currencies:
-                _tx['amount'] = item.debit
+                _tx['amount'] = rounded(item.debit, 2)
                 _tx['currency'] = item.currency
-                
-            transactions.append(_tx)
+            
+            if item.base_debit != 0 or cint(self.exclude_zero_sum_txs) == 0:     # if exclude zero, do not add this component
+                transactions.append(totalise_key_currency(_tx))
              
         
         pinvs = self.get_docs([ref.__dict__ for ref in self.references], "Purchase Invoice")
@@ -439,17 +501,19 @@ class AbacusExportFile(Document):
                 WHERE `tabPurchase Invoice`.`name` IN ({pinvs});""".format(pinvs=self.get_sql_list(pinvs))
         
         pinv_items = frappe.db.sql(sql_query, as_dict=True)
-        # create item entries
-        if item.supplier_name:
-            text2 = html.escape(item.supplier_name)
-        else:
-            text2 = ""
+
         for item in pinv_items:
+            # create item entries
             if item.taxes_and_charges:
                 tax_record = frappe.get_doc("Purchase Taxes and Charges Template", item.taxes_and_charges)
                 tax_code = tax_record.tax_code
             else:
                 tax_code = None
+            
+            if item.supplier_name:
+                text2 = html.escape(item.supplier_name)
+            else:
+                text2 = ""
             
             # find against accounts
             against_positions = []
@@ -461,18 +525,21 @@ class AbacusExportFile(Document):
                 FROM `tabPurchase Invoice Item`
                 WHERE `parent` = "{pinv}"
                 GROUP BY `expense_account`;""".format(pinv=item.name), as_dict=True):
+                tax_amount = rounded((account['amount'] * (item.rate or 0) / 100), 2)
                 against_positions.append({
                     'account': self.get_account_number(account['expense_account']),
-                    'amount': account['amount'],
+                    'amount': rounded(account['amount'], 2),
                     'currency': item.currency,
-                    'key_amount': account['key_amount'],
-                    'key_currency': base_currency
+                    'key_amount': rounded(account['key_amount'], 2),
+                    'key_currency': base_currency,
+                    'tax_amount': tax_amount,
+                    'key_tax_amount': rounded((tax_amount * item.conversion_rate), 2)
                 })
             # create content
             _tx = {
                 'account': self.get_account_number(item.credit_to), 
-                'amount': item.base_credit, 
-                'key_amount': item.base_credit, 
+                'amount': rounded(item.base_credit, 2), 
+                'key_amount': rounded(item.base_credit, 2), 
                 'key_currency': base_currency,
                 'exchange_rate': item.conversion_rate,
                 'against_singles': against_positions,
@@ -481,8 +548,9 @@ class AbacusExportFile(Document):
                 'currency': base_currency, 
                 'tax_account': self.get_account_number(item.account_head) or None, 
                 # 'tax_amount': item.tax or None,    # this takes the complete tax amount
-                'tax_amount': None,                  # calculate on the basis of the item
-                'tax_rate': item.rate or None, 
+                # 'tax_amount': None,                  # calculate on the basis of the item
+                # 'tax_amount': (item.base_credit * (item.rate or 0) / 100),
+                'tax_rate': rounded(item.rate, 2) if item.rate else 0, 
                 'tax_code': tax_code or "312", 
                 'tax_currency': base_currency,
                 'text1': html.escape(item.name),
@@ -490,10 +558,11 @@ class AbacusExportFile(Document):
             }
                 
             if not restrict_currencies or item.currency in restrict_currencies:
-                _tx['amount'] = item.credit
+                _tx['amount'] = rounded(item.credit, 2)
                 _tx['currency'] = item.currency
-                
-            transactions.append(_tx)
+            
+            if item.base_debit != 0 or cint(self.exclude_zero_sum_txs) == 0:     # if exclude zero, do not add this component
+                transactions.append(totalise_key_currency(_tx))
             
         # add payment entry transactions
         pes = self.get_docs([ref.__dict__ for ref in self.references], "Payment Entry")
@@ -514,23 +583,23 @@ class AbacusExportFile(Document):
             # create content
             transaction = {
                 'account': self.get_account_number(pe_record.paid_to),  # bank
-                'amount': pe_record.paid_amount, 
+                'amount': rounded(pe_record.paid_amount, 2), 
                 'against_singles': [{
                     'account': self.get_account_number(pe_record.paid_from),    # debtor
-                    'amount': pe_record.total_allocated_amount,
+                    'amount': rounded(pe_record.total_allocated_amount, 2),
                     'currency': pe_record.paid_from_account_currency,
                     'key_currency': base_currency,
-                    'key_amount': pe_record.base_total_allocated_amount
+                    'key_amount': rounded(pe_record.base_total_allocated_amount, 2)
                 }],
                 'debit_credit': debit_credit, 
                 'date': pe_record.posting_date, 
                 'currency': pe_record.paid_from_account_currency, 
                 'key_currency': base_currency,
-                'key_amount': pe_record.base_paid_amount,
+                'key_amount': rounded(pe_record.base_paid_amount, 2),
                 'exchange_rate': pe_record.source_exchange_rate,
                 'tax_account': None, 
                 'tax_amount': None, 
-                'tax_rate': None, 
+                'tax_rate': 0, 
                 'tax_code': None, 
                 'text1': html.escape(pe_record.name)
             }
@@ -541,9 +610,9 @@ class AbacusExportFile(Document):
                     sign = (-1)
                 transaction['against_singles'].append({
                     'account': self.get_account_number(deduction.account),
-                    'amount': sign * (deduction.amount / pe_record.source_exchange_rate),    # virtual valuation to other currency
+                    'amount': rounded(sign * (deduction.amount / pe_record.source_exchange_rate), 2),    # virtual valuation to other currency
                     'currency': pe_record.paid_to_account_currency,
-                    'key_amount': sign * deduction.amount,
+                    'key_amount': rounded(sign * deduction.amount, 2),
                     'key_currency': base_currency
                 })
                 
@@ -585,18 +654,18 @@ class AbacusExportFile(Document):
             # create content
             transaction = {
                 'account': self.get_account_number(jv_record.accounts[0].account), 
-                'amount': amount, 
+                'amount': rounded(amount, 2), 
                 'against_singles': [],
                 'debit_credit': debit_credit, 
                 'date': jv_record.posting_date, 
                 'currency': jv_record.accounts[0].account_currency, 
                 'tax_account': None, 
                 'tax_amount': None, 
-                'tax_rate': None, 
+                'tax_rate': 0, 
                 'tax_code': None, 
                 'text1': html.escape(jv_record.name),
                 'key_currency': key_currency,
-                'key_amount': key_amount
+                'key_amount': rounded(key_amount, 2)
             }
             if jv_record.multi_currency == 1:
                 transaction['exchange_rate'] = jv_record.accounts[0].exchange_rate
@@ -611,10 +680,10 @@ class AbacusExportFile(Document):
                     key_amount = jv_record.accounts[i].debit - jv_record.accounts[i].credit
                 transaction_single = {
                     'account': self.get_account_number(jv_record.accounts[i].account),
-                    'amount': amount,
+                    'amount': rounded(amount, 2),
                     'currency': jv_record.accounts[i].account_currency,
                     'key_currency': key_currency,
-                    'key_amount': key_amount
+                    'key_amount': rounded(key_amount, 2)
                 }
                 if jv_record.multi_currency == 1:
                     transaction_single['exchange_rate'] = jv_record.accounts[i].exchange_rate
@@ -634,3 +703,104 @@ def set_export_flag(dt, docs, exported):
     frappe.db.sql(update_query)
     return
         
+"""
+Check debit and credit in key/base currency and if required, totalise using the last tax section (Abacus behaviour)
+"""
+def totalise_key_currency(tx):
+    # initialise with debit/credit from collective node
+    delta = tx.get("key_amount") or 0
+    # subtract single nodes with tax
+    for s in tx.get("against_singles"):
+        delta -= ((s.get("key_amount") or 0) + (s.get("key_tax_amount") or 0))
+        
+    # add delta
+    if delta != 0:
+        tx['against_singles'][-1]['key_tax_amount'] = rounded((tx['against_singles'][-1].get("key_tax_amount") or 0 ) + delta, 2)
+        
+    return tx
+
+
+"""
+Compare a result file against the export xml to identify errors and take action
+"""
+@frappe.whitelist()
+def compare_result_xml(docname, xml_content):
+    # get the transaction xml file
+    if not frappe.db.exists("Abacus Export File", docname):
+        frappe.throw( _("Invalid Abacus File reference"), _("Error") )
+        
+    doc = frappe.get_doc("Abacus Export File", docname)
+    transaction_xml = doc.render_transfer_file().get('content')
+    
+    # load both transfer file and result into BeautifulSoups
+    # parse original transaction file
+    transaction_soup = BeautifulSoup(transaction_xml, 'lxml')
+
+    # find transactions
+    export_transactions = transaction_soup.find_all('transaction')
+
+    # extract id and text1 (=document number)
+    export = {}
+    for t in export_transactions:
+        try:
+            export[t['id']] = {
+                'document': t.entry.collectiveinformation.text1.get_text(),
+                'date': t.entry.collectiveinformation.entrydate.get_text()
+            }
+        except Exception as err:
+            print("Transaction {0} has {1}".format(t['id'], err))
+    
+    # parse result file
+    result_soup = BeautifulSoup(xml_content, 'lxml')
+
+    # find transactions
+    result_transactions = result_soup.find_all('transaction')
+
+    # for each transaction, export ID and error message
+    errors = []
+    for t in result_transactions:
+        errors.append({
+            'id': t['id'],
+            'error': t.messages.message.get_text()
+        })
+        
+    # create a lookup table from document names to doctypes
+    doctype_map = {}
+    if doc.references:
+        for r in doc.references:
+            doctype_map[r.get('dn')] = r.get('dt')
+    
+    # extend the error list with doctypes and docnames
+    for e in errors:
+        try:
+            e['document'] = export[e['id']]['document']
+            e['date'] = export[e['id']]['date']
+            e['doctype'] = doctype_map[e['document']]
+            
+        except Exception as err:
+            e['document'] = "Not found"
+            e['doctype'] = None
+            e['date'] = None
+            
+    # render the output into a dialog
+    output_dialog = frappe.render_template("erpnextswiss/erpnextswiss/doctype/abacus_export_file/compare_result_dialog.html", {'errors': errors})
+
+    return output_dialog
+
+
+"""
+Download the xml content
+"""
+@frappe.whitelist()
+def download_xml(docname):
+    # get the transaction xml file
+    if not frappe.db.exists("Abacus Export File", docname):
+        frappe.throw( _("Invalid Abacus File reference"), _("Error") )
+        
+    doc = frappe.get_doc("Abacus Export File", docname)
+    transaction_xml = doc.render_transfer_file().get('content')
+    
+    # return download
+    frappe.local.response.filename = "{name}.xml".format(name=docname.replace(" ", "-").replace("/", "-"))
+    frappe.local.response.filecontent = transaction_xml
+    frappe.local.response.type = "download"

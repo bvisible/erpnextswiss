@@ -47,7 +47,7 @@ frappe.ui.form.on('Purchase Invoice', {
     validate: function(frm) {
         if (frm.doc.payment_type == "ESR") {
             if (frm.doc.esr_reference_number) {
-                if (!check_esr(frm.doc.esr_reference_number)) {
+                if ((!frm.doc.esr_reference_number.startsWith("RF")) && (!check_esr(frm.doc.esr_reference_number))) {
                     frappe.msgprint( __("ESR code not valid") ); 
                     frappe.validated=false;
                 } 
@@ -359,15 +359,15 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
     //console.log(supplier);
     if (supplier_exists) {
         if (!cur_frm.doc.supplier||cur_frm.doc.supplier == supplier) {
-            var supplier_matched_txt = "<p style='color: green;'>" + __("Supplier matched") + "</p>";
+            var supplier_matched_txt = `<p style='color: green;'>${__("Supplier matched")} (${supplier_name})</p>`;
             field_list.push({'fieldname': 'supplier', 'fieldtype': 'Link', 'label': __('Supplier'), 'reqd': 1, 'options': 'Supplier', 'default': supplier, 'description': supplier_matched_txt});
         } else {
-            var supplier_missmatch_txt = "<p style='color: orange;'>" + __("Supplier found, but does not match with Invoice Supplier!") + "</p>";
+            var supplier_missmatch_txt = `<p style='color: orange;'>${__("Supplier found, but does not match with Invoice Supplier!")}</p>`;
             field_list.push({'fieldname': 'supplier', 'fieldtype': 'Link', 'label': __('Supplier'), 'reqd': 1, 'options': 'Supplier', 'default': supplier, 'description': supplier_missmatch_txt});
         }
     } else {
         if (supplier_list.length < 1) {
-            var supplier_not_found_txt = "<p style='color: red;'>" + __("No Supplier found! Fetched default Supplier.") + "</p>";
+            var supplier_not_found_txt = `<p style='color: red;'>${__("No Supplier found! Fetched default Supplier.")}</p>`;
             field_list.push({'fieldname': 'supplier', 'fieldtype': 'Link', 'label': __('Supplier'), 'reqd': 1, 'options': 'Supplier', 'default': default_settings.supplier, 'description': supplier_not_found_txt});
             field_list.push({'fieldname': 'create_supplier', 'fieldtype': 'HTML', 'options': '<div class="form-group"> <div class="clearfix">  </div> <div class="control-input-wrapper"> <div class="control-input"> <button class="btn btn-default btn-sm btn-attach" id="create_supplier" >Create</button> </div> </div> </div>'});
 
@@ -436,7 +436,7 @@ function show_esr_detail_dialog(frm, participant, reference, amount, default_set
             }, 1000);
 
         } else {
-            var multiple_supplier_txt = "<p style='color: orange;'>" + __("Multiple Supplier found, please choose one!") + "</p>";
+            var multiple_supplier_txt = `<p style='color: orange;'>${__("Multiple Supplier found, please choose one!")}</p>`;
             field_list.push({'fieldname': 'supplier', 'fieldtype': 'Select', 'label': __('Supplier'), 'reqd': 1, 'options': supplier_list, 'description': multiple_supplier_txt});
         }
     }

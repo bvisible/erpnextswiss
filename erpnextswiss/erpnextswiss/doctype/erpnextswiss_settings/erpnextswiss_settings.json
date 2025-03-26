@@ -9,6 +9,8 @@
   "default_supplier",
   "section_payment_reminder",
   "payment_reminder_auto_submit",
+  "no_reminder_on_credit_balance",
+  "reminder_min_threshold",
   "column_payment_reminder",
   "payment_reminder_charges",
   "payment_reminder_level_blocking_period",
@@ -25,6 +27,7 @@
   "always_use_entry_transaction_type",
   "auto_process_matches",
   "numeric_only_debtor_matching",
+  "ignore_special_characters",
   "debug_mode",
   "iban_check_mandatory",
   "bank_import_section",
@@ -128,6 +131,7 @@
    "options": "Account"
   },
   {
+   "collapsible": 1,
    "fieldname": "bank_import_section",
    "fieldtype": "Section Break",
    "label": "Bank Import"
@@ -139,11 +143,11 @@
    "options": "BankImport Bank"
   },
   {
-   "default": "03",
+   "default": "09",
    "fieldname": "xml_version",
    "fieldtype": "Select",
    "label": "XML-Version",
-   "options": "03\n05\n03CH02"
+   "options": "09\n03\n05\n03CH02"
   },
   {
    "fieldname": "invoice_code_line_scanning_section",
@@ -282,10 +286,28 @@
    "fieldname": "iban_check_mandatory",
    "fieldtype": "Check",
    "label": "IBAN check mandatory"
+  },
+  {
+   "default": "0",
+   "fieldname": "no_reminder_on_credit_balance",
+   "fieldtype": "Check",
+   "label": "No Reminder on Credit Balance"
+  },
+  {
+   "default": "0",
+   "fieldname": "ignore_special_characters",
+   "fieldtype": "Check",
+   "label": "Ignore special characters"
+  },
+  {
+   "default": "0",
+   "fieldname": "reminder_min_threshold",
+   "fieldtype": "Currency",
+   "label": "Reminder Minimum Threshold"
   }
  ],
  "issingle": 1,
- "modified": "2023-06-02 10:33:12.805101",
+ "modified": "2025-01-17 09:02:30.124019",
  "modified_by": "Administrator",
  "module": "ERPNextSwiss",
  "name": "ERPNextSwiss Settings",

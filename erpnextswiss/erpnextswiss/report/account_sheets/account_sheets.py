@@ -102,11 +102,44 @@ def get_data(filters):
             opening_debit = 0
             opening_credit = opening_balance['credit'] - opening_balance['debit']
         opening_balance = opening_debit - opening_credit
-
-        has_positions = positions and len(positions) > 0
-        if has_positions or (not has_positions and not filters.hide_null_values and opening_balance != 0):
-            data.append({'remarks': account['name']})
-
+        data.append({
+            'date': filters.from_date, 
+            'debit': opening_debit,
+            'credit': opening_credit,
+            'balance': opening_balance,
+            'remarks': _("Opening")
+        })
+        # get positions
+        positions = frappe.db.sql("""SELECT 
+                `posting_date` AS `posting_date`,
+                `debit` AS `debit`,
+                `credit` AS `credit`,
+                `remarks` AS `remarks`,
+                `voucher_type` AS `voucher_type`,
+                `voucher_no` AS `voucher`,
+                `against` AS `against`
+            FROM `tabGL Entry`
+            WHERE `account` = "{account}"
+              AND `docstatus` = 1
+              AND DATE(`posting_date`) >= "{from_date}"
+              AND DATE(`posting_date`) <= "{to_date}"
+              {conditions}
+            ORDER BY `posting_date` ASC;""".format(conditions=transaction_conditions,
+            account=account['name'], from_date=filters.from_date, to_date=filters.to_date), as_dict=True)
+        for position in positions:
+            opening_debit += position['debit']
+            opening_credit += position['credit']
+            opening_balance = opening_balance - position['credit'] + position['debit']
+            if "," in (position['against'] or ""):
+                against = "{0} (...)".format((position['against'] or "").split(" ")[0])
+            else:
+                against = (position['against'] or "").split(" ")[0]
+            if len(position['remarks'] or "") > 30:
+                remarks = "{0}...".format(position['remarks'][:30])
+            else:
+                remarks = position['remarks']
+            # replace line feed (for export)
+            remarks = remarks.replace("\n", "") if remarks else ""
             data.append({
                 'date': filters.from_date,
                 'debit': opening_debit,
