@@ -23,9 +23,14 @@ class ebicsConnection(Document):
                 self.synced_until = datetime.strptime(self.synced_until, "%Y-%m-%d").date()
             elif type(self.synced_until) == datetime.datetime:
                 self.synced_until =self.synced_until.date()
+        
+        # Clean up URL - remove trailing spaces
+        if self.url:
+            self.url = self.url.strip()
                 
         return
         
+    @frappe.whitelist()
     def get_activation_wizard(self):
         # determine configuration stage
         if (not self.host_id) or (not self.url) or (not self.partner_id) or (not self.user_id) or (not self.key_password):
@@ -68,17 +73,33 @@ class ebicsConnection(Document):
         client = EbicsClient(bank, user, version=self.ebics_version)
         return client
         
+    @frappe.whitelist()
     def create_keys(self):
         try:
             passphrase = get_decrypted_password("ebics Connection", self.name, "key_password", False)
             keyring = EbicsKeyRing(keys=self.get_keys_file_name(), passphrase=passphrase)
             bank = EbicsBank(keyring=keyring, hostid=self.host_id, url=self.url)
             user = EbicsUser(keyring=keyring, partnerid=self.partner_id, userid=self.user_id)
-            user.create_keys(keyversion='A006', bitlength=2048)
+            
+            # Check if we need to create keys or just certificates
+            try:
+                user.create_keys(keyversion='A006', bitlength=2048)
+                frappe.msgprint(_("Keys created successfully"))
+            except RuntimeError as e:
+                if "keys already present" in str(e):
+                    frappe.msgprint(_("Keys already exist, creating certificates only"))
+                else:
+                    raise e
+                    
+            # Always try to create certificates
+            self.create_certificate()
+            frappe.msgprint(_("Certificates created successfully"))
+            
         except Exception as err:
             frappe.throw( "{0}".format(err), _("Error") )
         return
 
+    @frappe.whitelist()
     def create_certificate(self):
         try:
             passphrase = get_decrypted_password("ebics Connection", self.name, "key_password", False)
@@ -99,6 +120,7 @@ class ebicsConnection(Document):
             frappe.throw( "{0}".format(err), _("Error") )
         return
         
+    @frappe.whitelist()
     def send_signature(self):
         try:
             client = self.get_client()
@@ -106,10 +128,22 @@ class ebicsConnection(Document):
             self.ini_sent = 1
             self.save()
             frappe.db.commit()
+        except fintech.ebics.EbicsTechnicalError as err:
+            error_msg = str(err)
+            if "EBICS_INVALID_USER_OR_USER_STATE" in error_msg:
+                frappe.throw(
+                    _("The EBICS user is not recognized by the bank or is in an invalid state. "
+                      "Please contact your bank to ensure your EBICS user account has been created and activated. "
+                      "User ID: {0}, Partner ID: {1}").format(self.user_id, self.partner_id),
+                    _("EBICS User Not Active")
+                )
+            else:
+                frappe.throw( "{0}".format(err), _("EBICS Technical Error") )
         except Exception as err:
             frappe.throw( "{0}".format(err), _("Error") )
         return
     
+    @frappe.whitelist()
     def send_keys(self):
         try:
             client = self.get_client()
@@ -117,10 +151,22 @@ class ebicsConnection(Document):
             self.hia_sent = 1
             self.save()
             frappe.db.commit()
+        except fintech.ebics.EbicsTechnicalError as err:
+            error_msg = str(err)
+            if "EBICS_INVALID_USER_OR_USER_STATE" in error_msg:
+                frappe.throw(
+                    _("The EBICS user is not recognized by the bank or is in an invalid state. "
+                      "Please contact your bank to ensure your EBICS user account has been created and activated. "
+                      "User ID: {0}, Partner ID: {1}").format(self.user_id, self.partner_id),
+                    _("EBICS User Not Active")
+                )
+            else:
+                frappe.throw( "{0}".format(err), _("EBICS Technical Error") )
         except Exception as err:
             frappe.throw( "{0}".format(err), _("Error") )
         return
     
+    @frappe.whitelist()
     def create_ini_letter(self):
         try:
             # create ini letter
@@ -131,7 +177,7 @@ class ebicsConnection(Document):
             user.create_ini_letter(bankname=self.title, path=file_name)
             # load ini pdf
             f = open(file_name, "rb")
-            pdf_content = r.read()
+            pdf_content = f.read()
             f.close()
             # attach to ebics
             save_file("ini_letter.pdf", pdf_content, self.doctype, self.name, is_private=1)
@@ -145,6 +191,7 @@ class ebicsConnection(Document):
             frappe.throw( "{0}".format(err), _("Error") )
         return
         
+    @frappe.whitelist()
     def download_public_keys(self):
         try:
             client = self.get_client()
@@ -156,6 +203,7 @@ class ebicsConnection(Document):
             frappe.throw( "{0}".format(err), _("Error") )
         return
         
+    @frappe.whitelist()
     def activate_account(self):
         try:
             passphrase = get_decrypted_password("ebics Connection", self.name, "key_password", False)
@@ -165,6 +213,37 @@ class ebicsConnection(Document):
             self.activated = 1
             self.save()
             frappe.db.commit()
+        except Exception as err:
+            frappe.throw( "{0}".format(err), _("Error") )
+        return
+    
+    @frappe.whitelist()
+    def test_connection(self):
+        """Test the EBICS connection parameters"""
+        try:
+            # Display current configuration
+            config_info = f"""
+            <h4>Configuration actuelle:</h4>
+            <ul>
+                <li><b>Host ID:</b> {self.host_id}</li>
+                <li><b>URL:</b> {self.url}</li>
+                <li><b>Partner ID:</b> {self.partner_id}</li>
+                <li><b>User ID:</b> {self.user_id}</li>
+                <li><b>EBICS Version:</b> {self.ebics_version}</li>
+                <li><b>Keys file:</b> {os.path.basename(self.get_keys_file_name())}</li>
+                <li><b>Keys exist:</b> {'Yes' if os.path.exists(self.get_keys_file_name()) else 'No'}</li>
+            </ul>
+            """
+            
+            # Try to create client
+            try:
+                client = self.get_client()
+                config_info += "<p style='color: green;'>✓ Client created successfully</p>"
+            except Exception as e:
+                config_info += f"<p style='color: red;'>✗ Client creation failed: {str(e)}</p>"
+                
+            frappe.msgprint(config_info, title=_("EBICS Connection Test"), as_list=False)
+            
         except Exception as err:
             frappe.throw( "{0}".format(err), _("Error") )
         return
@@ -235,12 +314,6 @@ class ebicsConnection(Document):
                     if debug:
                         print("Parsing data...")
                     stmt.parse_content()
-                    
-                    # if there are no transactions: drop file
-                    if len(stmt.transactions) == 0:
-                        stmt.delete()
-                        continue
-                        
                     if debug:
                         print("Processing transactions...")
                     stmt.process_transactions()
