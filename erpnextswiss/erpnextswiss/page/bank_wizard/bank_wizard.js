@@ -197,6 +197,14 @@ frappe.bank_wizard = {
         var container = document.getElementById("table_placeholder");
         // var content = frappe.render_template('transaction_table', message);
         container.innerHTML = message.html;
+        
+        // Initialize Bootstrap tooltips after rendering the table
+        setTimeout(function() {
+            $('[data-toggle="tooltip"]').tooltip({
+                container: 'body',
+                html: true
+            });
+        }, 100);
     
         // attach button handlers
         var bank_account = document.getElementById("bank_account").value;
@@ -488,6 +496,14 @@ frappe.bank_wizard = {
                     frappe.bank_wizard.create_payment_entry(payment, transaction.txid);
                 });
             }
+            // add journal entry handler
+            var button = document.getElementById("btn-journal-entry-" + transaction.txid);
+            if (button) {
+                button.addEventListener("click", function(e) {
+                    e.target.disabled = true;
+                    frappe.bank_wizard.create_journal_entry_dialog(transaction, bank_account, company);
+                });
+            }
         }); 
     },
     create_payment_entry: function(payment, txid) {
@@ -518,5 +534,99 @@ frappe.bank_wizard = {
                 frappe.bank_wizard.close_entry(txid);
             }
         });    
+    },
+    create_journal_entry_dialog: function(transaction, bank_account, company) {
+        // Préparer la remarque par défaut
+        var default_remark = transaction.transaction_reference + ' - ' + (transaction.party_name || '');
+        if (transaction.party_address) {
+            default_remark += ' - ' + transaction.party_address;
+        }
+        
+        var d = new frappe.ui.Dialog({
+            title: __('Create Journal Entry from Template'),
+            fields: [
+                {
+                    'fieldname': 'journal_entry_template',
+                    'fieldtype': 'Link',
+                    'label': __('Journal Entry Template'),
+                    'options': 'Journal Entry Template',
+                    'reqd': 1,
+                    'get_query': function() {
+                        return {
+                            filters: {
+                                'company': company
+                            }
+                        };
+                    }
+                },
+                {
+                    'fieldname': 'user_remark',
+                    'fieldtype': 'Small Text',
+                    'label': __('User Remark'),
+                    'default': default_remark,
+                    'description': __('This remark will be added to the Journal Entry')
+                },
+                {
+                    'fieldname': 'transaction_info',
+                    'fieldtype': 'HTML',
+                    'label': __('Transaction Information'),
+                    'options': '<div class="alert alert-info">' +
+                        '<strong>' + __('Transaction Details:') + '</strong><br>' +
+                        __('Date') + ': ' + frappe.datetime.str_to_user(transaction.date) + '<br>' +
+                        __('Amount') + ': ' + transaction.currency + ' ' + transaction.amount + '<br>' +
+                        __('Type') + ': ' + (transaction.credit_debit == 'DBIT' ? __('Debit') : __('Credit')) + '<br>' +
+                        __('Party') + ': ' + (transaction.party_name || 'N/A') + '<br>' +
+                        __('Reference') + ': ' + transaction.transaction_reference +
+                        '</div>'
+                }
+            ],
+            primary_action_label: __('Create'),
+            primary_action: function(values) {
+                // Validate the template first
+                frappe.call({
+                    method: 'erpnextswiss.erpnextswiss.page.bank_wizard.bank_wizard.validate_journal_template',
+                    args: {
+                        template_name: values.journal_entry_template,
+                        transaction_type: transaction.credit_debit,
+                        bank_account: bank_account
+                    },
+                    callback: function(r) {
+                        if (r.message.valid) {
+                            // Create the journal entry
+                            frappe.call({
+                                method: 'erpnextswiss.erpnextswiss.page.bank_wizard.bank_wizard.make_journal_entry_from_template',
+                                args: {
+                                    template_name: values.journal_entry_template,
+                                    transaction: transaction,
+                                    bank_account: bank_account,
+                                    company: company,
+                                    user_remark: values.user_remark
+                                },
+                                callback: function(r) {
+                                    if (r.message) {
+                                        d.hide();
+                                        frappe.show_alert({
+                                            message: __('Journal Entry {0} created successfully', [r.message.journal_entry]),
+                                            indicator: 'green'
+                                        });
+                                        // Open the journal entry in a new tab
+                                        window.open(r.message.link, '_blank');
+                                        // Close the transaction row
+                                        frappe.bank_wizard.close_entry(transaction.txid);
+                                    }
+                                }
+                            });
+                        } else {
+                            frappe.msgprint({
+                                title: __('Template Not Compatible'),
+                                indicator: 'red',
+                                message: r.message.message
+                            });
+                        }
+                    }
+                });
+            }
+        });
+        d.show();
     }
 }

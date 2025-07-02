@@ -92,7 +92,7 @@
    "fieldname": "payment_type",
    "fieldtype": "Select",
    "label": "Payment Type",
-   "options": "SEPA\nIBAN\nESR"
+   "options": "SEPA\nIBAN\nESR\nQRR\nSCOR"
   },
   {
    "fieldname": "section_esr",

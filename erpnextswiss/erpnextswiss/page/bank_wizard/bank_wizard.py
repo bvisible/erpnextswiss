@@ -151,7 +151,17 @@ def get_bank_accounts():
     return {'accounts': selectable_accounts }
 
 @frappe.whitelist()
-def get_default_accounts(bank_account):
+def get_default_accounts(bank_account=None):
+    if not bank_account:
+        # Return empty defaults if no bank account provided
+        return {
+            'company': None,
+            'receivable_account': None,
+            'payable_account': None,
+            'expense_payable_account': None,
+            'auto_process_matches': frappe.get_value('ERPNextSwiss Settings', 'ERPNextSwiss Settings', 'auto_process_matches')
+        }
+    
     company = frappe.get_value("Account", bank_account, "company")
     receivable_account = frappe.get_value('Company', company, 'default_receivable_account')
     payable_account = frappe.get_value('Company', company, 'default_payable_account')
@@ -207,21 +217,140 @@ Input: camt.053-xml-string
 Output: meta-dict
 """
 def read_camt053_meta(content):
-    soup = BeautifulSoup(content, 'lxml')
-    meta = {
-        'iban': soup.document.bktocstmrstmt.stmt.acct.id.iban.get_text(),
-        'electronic_sequence_number': soup.document.bktocstmrstmt.stmt.elctrncseqnb.get_text(),
-        'msgid': soup.document.bktocstmrstmt.stmt.id.get_text(),
-        'currency': soup.document.bktocstmrstmt.stmt.acct.ccy.get_text()
-    }
-    # find balances
-    balances = soup.find_all('bal')
-    for balance in balances:
-        balance_soup = BeautifulSoup(str(balance), 'lxml')
-        if balance_soup.tp.cdorprtry.cd.get_text() == "OPBD":
-            meta['opening_balance'] = float(balance_soup.amt.get_text())
-        elif balance_soup.tp.cdorprtry.cd.get_text() == "CLBD":
-            meta['closing_balance'] = float(balance_soup.amt.get_text())
+    soup = BeautifulSoup(content, 'lxml-xml')  # Use lxml-xml for better namespace handling
+    meta = {}
+    
+    try:
+        # Try to get IBAN - handle both lowercase and uppercase tags
+        iban_element = soup.find('IBAN') or soup.find('iban')
+        if iban_element:
+            meta['iban'] = iban_element.get_text().strip()
+        else:
+            meta['iban'] = 'n/a'
+            frappe.log_error("Could not find IBAN in XML", "CAMT053 Parsing")
+        
+        # Try to get electronic sequence number
+        elec_seq = soup.find('ElctrncSeqNb') or soup.find('elctrncseqnb')
+        if elec_seq:
+            meta['electronic_sequence_number'] = elec_seq.get_text().strip()
+        else:
+            meta['electronic_sequence_number'] = 'n/a'
+        
+        # Try to get message ID from Stmt
+        stmt = soup.find('Stmt') or soup.find('stmt')
+        if stmt:
+            stmt_id = stmt.find('Id') or stmt.find('id')
+            if stmt_id:
+                meta['msgid'] = stmt_id.get_text().strip()
+            else:
+                meta['msgid'] = 'n/a'
+        else:
+            meta['msgid'] = 'n/a'
+        
+        # Try to get currency from balance or account
+        # First try from Bal/Amt
+        amt_element = soup.find('Amt') or soup.find('amt')
+        if amt_element and amt_element.has_attr('Ccy'):
+            meta['currency'] = amt_element['Ccy']
+        elif amt_element and amt_element.has_attr('ccy'):
+            meta['currency'] = amt_element['ccy']
+        else:
+            # Try from account currency
+            ccy_element = soup.find('Ccy') or soup.find('ccy')
+            if ccy_element:
+                meta['currency'] = ccy_element.get_text().strip()
+            else:
+                meta['currency'] = 'CHF'
+                
+    except Exception as e:
+        frappe.log_error("Error parsing CAMT053 meta: {0}".format(str(e)), "CAMT053 Parsing Error")
+        meta = {
+            'iban': 'n/a',
+            'electronic_sequence_number': 'n/a',
+            'msgid': 'n/a',
+            'currency': 'CHF'
+        }
+    # find balances - handle both uppercase and lowercase
+    try:
+        balances = soup.find_all('Bal') or soup.find_all('bal')
+        for balance in balances:
+            try:
+                # Get balance type
+                cd_element = balance.find('Cd') or balance.find('cd')
+                if cd_element:
+                    balance_type = cd_element.get_text().strip()
+                    # Get amount
+                    amt_element = balance.find('Amt') or balance.find('amt')
+                    if amt_element:
+                        amount_text = amt_element.get_text().strip()
+                        amount = float(amount_text)
+                        
+                        # Check if debit or credit
+                        cdtdbtind_element = balance.find('CdtDbtInd') or balance.find('cdtdbtind')
+                        if cdtdbtind_element:
+                            cdtdbt = cdtdbtind_element.get_text().strip()
+                            if cdtdbt == "DBIT":
+                                amount = -amount
+                        
+                        if balance_type == "OPBD":
+                            meta['opening_balance'] = amount
+                        elif balance_type == "CLBD":
+                            meta['closing_balance'] = amount
+            except Exception as e:
+                frappe.log_error("Error parsing balance: {0}".format(str(e)), "CAMT053 Balance Parsing")
+                continue
+    except Exception as e:
+        frappe.log_error("Error finding balances: {0}".format(str(e)), "CAMT053 Balance Search")
+        
+    # Set default values if not found
+    if 'opening_balance' not in meta:
+        meta['opening_balance'] = 0.0
+    if 'closing_balance' not in meta:
+        meta['closing_balance'] = 0.0
+    
+    # Extract statement date from FrDtTm or ToDtTm
+    try:
+        # Try to find statement date/time elements
+        # First try FrDtTm (From Date Time)
+        fr_dt_tm_element = soup.find('FrDtTm') or soup.find('frdttm')
+        if fr_dt_tm_element:
+            dt_element = fr_dt_tm_element.find('Dt') or fr_dt_tm_element.find('dt')
+            if dt_element:
+                date_text = dt_element.get_text().strip()
+                # Ensure the date is in YYYY-MM-DD format
+                if len(date_text) == 10 and date_text[4] == '-' and date_text[7] == '-':
+                    meta['statement_date'] = date_text
+                else:
+                    frappe.log_error(f"Unexpected date format in FrDtTm: {date_text}", "CAMT053 Date Format")
+        
+        # If not found, try ToDtTm (To Date Time)
+        if 'statement_date' not in meta:
+            to_dt_tm_element = soup.find('ToDtTm') or soup.find('todttm')
+            if to_dt_tm_element:
+                dt_element = to_dt_tm_element.find('Dt') or to_dt_tm_element.find('dt')
+                if dt_element:
+                    date_text = dt_element.get_text().strip()
+                    # Ensure the date is in YYYY-MM-DD format
+                    if len(date_text) == 10 and date_text[4] == '-' and date_text[7] == '-':
+                        meta['statement_date'] = date_text
+                    else:
+                        frappe.log_error(f"Unexpected date format in ToDtTm: {date_text}", "CAMT053 Date Format")
+        
+        # If still not found, try CreDtTm (Creation Date Time) as fallback
+        if 'statement_date' not in meta:
+            cre_dt_tm_element = soup.find('CreDtTm') or soup.find('credttm')
+            if cre_dt_tm_element:
+                # CreDtTm usually contains datetime directly as text
+                datetime_str = cre_dt_tm_element.get_text().strip()
+                # Extract just the date part (YYYY-MM-DD)
+                if 'T' in datetime_str:
+                    meta['statement_date'] = datetime_str.split('T')[0]
+                else:
+                    meta['statement_date'] = datetime_str[:10]
+                    
+    except Exception as e:
+        frappe.log_error("Error extracting statement date: {0}".format(str(e)), "CAMT053 Date Parsing")
+        meta['statement_date'] = None
             
     return meta
 
@@ -230,21 +359,26 @@ def read_camt053(content, account):
     settings = frappe.get_doc("ERPNextSwiss Settings", "ERPNextSwiss Settings")
     
     #read_camt_transactions_re(content)
-    soup = BeautifulSoup(content, 'lxml')
+    soup = BeautifulSoup(content, 'lxml-xml')  # Use lxml-xml for better namespace handling
     
     # general information
     try:
-        #iban = doc['Document']['BkToCstmrStmt']['Stmt']['Acct']['Id']['IBAN']
-        iban = soup.document.bktocstmrstmt.stmt.acct.id.iban.get_text()
-    except:
-        # fallback (Credit Suisse will provide bank account number instead of IBAN)
-        iban = "n/a"
-        try:
-            acct_no = soup.document.bktocstmrstmt.stmt.acct.id.othr.id.get_text()
-        except:
-            # node not found, probably wrong format
+        # Try to find IBAN - handle both uppercase and lowercase
+        iban_element = soup.find('IBAN') or soup.find('iban')
+        if iban_element:
+            iban = iban_element.get_text().strip()
+        else:
+            # fallback (Credit Suisse will provide bank account number instead of IBAN)
             iban = "n/a"
-            frappe.log_error("Unable to read structure. Please make sure that you have selected the correct format.", "BankWizard read_camt053")
+            othr_element = soup.find('Othr') or soup.find('othr')
+            if othr_element:
+                id_element = othr_element.find('Id') or othr_element.find('id')
+                if id_element:
+                    iban = id_element.get_text().strip()
+    except Exception as e:
+        # node not found, probably wrong format
+        iban = "n/a"
+        frappe.log_error("Unable to read IBAN: {0}".format(str(e)), "BankWizard read_camt053")
             
     # verify iban
     account_iban = frappe.get_value("Account", account, "iban")
@@ -257,8 +391,8 @@ def read_camt053(content, account):
             frappe.log_error( _("IBAN mismatch {0} (account) vs. {1} (file)").format(account_iban, iban), _("Bank Import IBAN validation") )
             frappe.msgprint( _("IBAN mismatch {0} (account) vs. {1} (file)").format(account_iban, iban), _("Bank Import IBAN validation") )
 
-    # transactions
-    entries = soup.find_all('ntry')
+    # transactions - handle both uppercase and lowercase
+    entries = soup.find_all('Ntry') or soup.find_all('ntry')
     transactions = read_camt_transactions(entries, account, settings)
     html = render_transactions(transactions)
     
@@ -911,4 +1045,181 @@ def get_numeric_only_reference(s):
 
 def remove_special_characters(s):
     return (s or "").replace(" ", "").replace("-", "")
+
+@frappe.whitelist()
+def validate_journal_template(template_name, transaction_type, bank_account):
+    """
+    Validate if the journal entry template is compatible with the transaction.
+    Check if there's a bank account in the template that matches the transaction type.
+    """
+    template = frappe.get_doc("Journal Entry Template", template_name)
+    bank_account_type = frappe.get_value("Account", bank_account, "account_type")
+    
+    # Get all accounts from the template
+    template_accounts = []
+    
+    # Check in the standard accounts field
+    if hasattr(template, 'accounts') and template.accounts:
+        for account_row in template.accounts:
+            account_type = frappe.get_value("Account", account_row.account, "account_type")
+            if account_type == "Bank":
+                template_accounts.append(account_row.account)
+    
+    # Check in accounting_entry_counterparty (if exists - custom field)
+    if hasattr(template, 'accounting_entry_counterparty') and template.accounting_entry_counterparty:
+        for account_row in template.accounting_entry_counterparty:
+            account_type = frappe.get_value("Account", account_row.account, "account_type")
+            if account_type == "Bank":
+                template_accounts.append(account_row.account)
+    
+    # Check in accounting_entry_totalization (if exists - custom field)
+    if hasattr(template, 'accounting_entry_totalization') and template.accounting_entry_totalization:
+        for account_row in template.accounting_entry_totalization:
+            account_type = frappe.get_value("Account", account_row.account, "account_type")
+            if account_type == "Bank":
+                template_accounts.append(account_row.account)
+    
+    if not template_accounts:
+        return {
+            'valid': False,
+            'message': _('The selected template does not contain any bank account. Please select a template with at least one bank account.')
+        }
+    
+    return {
+        'valid': True,
+        'bank_accounts': template_accounts
+    }
+
+@frappe.whitelist()
+def make_journal_entry_from_template(template_name, transaction, bank_account, company, user_remark=None):
+    """
+    Create a journal entry from a template for the given transaction.
+    """
+    import json
+    
+    # Parse transaction if it's a string
+    if isinstance(transaction, str):
+        transaction = json.loads(transaction)
+    
+    # Get the template
+    template = frappe.get_doc("Journal Entry Template", template_name)
+    
+    # Create new journal entry
+    journal_entry = frappe.new_doc("Journal Entry")
+    journal_entry.voucher_type = template.voucher_type
+    journal_entry.company = company
+    journal_entry.posting_date = transaction['date']
+    
+    # Use provided user_remark or create default one
+    if user_remark:
+        journal_entry.user_remark = user_remark
+    else:
+        journal_entry.user_remark = "{0} - {1}".format(
+            transaction.get('transaction_reference', ''),
+            transaction.get('party_name', '')
+        )
+    
+    # Use template naming series if available
+    if hasattr(template, 'naming_series') and template.naming_series:
+        journal_entry.naming_series = template.naming_series
+    
+    # Determine which account should be the bank account
+    bank_account_added = False
+    
+    # Process standard accounts from template
+    if hasattr(template, 'accounts') and template.accounts:
+        for template_account in template.accounts:
+            account_type = frappe.get_value("Account", template_account.account, "account_type")
+            
+            # Add account entry
+            je_account = journal_entry.append('accounts', {})
+            je_account.account = template_account.account
+            
+            # If this is a bank account, use the transaction's bank account and amount
+            if account_type == "Bank" and not bank_account_added:
+                je_account.account = bank_account
+                if transaction['credit_debit'] == 'DBIT':
+                    je_account.credit_in_account_currency = float(transaction['amount'])
+                else:
+                    je_account.debit_in_account_currency = float(transaction['amount'])
+                bank_account_added = True
+            else:
+                # For non-bank accounts, set the opposite amount
+                if transaction['credit_debit'] == 'DBIT':
+                    je_account.debit_in_account_currency = float(transaction['amount'])
+                else:
+                    je_account.credit_in_account_currency = float(transaction['amount'])
+    
+    # Process custom accounting_entry_counterparty (if exists)
+    if hasattr(template, 'accounting_entry_counterparty') and template.accounting_entry_counterparty:
+        for template_account in template.accounting_entry_counterparty:
+            account_type = frappe.get_value("Account", template_account.account, "account_type")
+            
+            je_account = journal_entry.append('accounts', {})
+            je_account.account = template_account.account
+            
+            if hasattr(template_account, 'user_remark'):
+                je_account.user_remark = template_account.user_remark
+            
+            # If this is a bank account, use the transaction's bank account
+            if account_type == "Bank" and not bank_account_added:
+                je_account.account = bank_account
+                if transaction['credit_debit'] == 'DBIT':
+                    je_account.credit_in_account_currency = float(transaction['amount'])
+                else:
+                    je_account.debit_in_account_currency = float(transaction['amount'])
+                bank_account_added = True
+            else:
+                # Counterparty accounts get the opposite of the bank movement
+                if transaction['credit_debit'] == 'DBIT':
+                    je_account.debit_in_account_currency = float(transaction['amount'])
+                else:
+                    je_account.credit_in_account_currency = float(transaction['amount'])
+    
+    # Process custom accounting_entry_totalization (if exists)
+    if hasattr(template, 'accounting_entry_totalization') and template.accounting_entry_totalization:
+        for template_account in template.accounting_entry_totalization:
+            account_type = frappe.get_value("Account", template_account.account, "account_type")
+            
+            je_account = journal_entry.append('accounts', {})
+            je_account.account = template_account.account
+            
+            if hasattr(template_account, 'user_remark'):
+                je_account.user_remark = template_account.user_remark
+            
+            # If this is a bank account, use the transaction's bank account
+            if account_type == "Bank" and not bank_account_added:
+                je_account.account = bank_account
+                if transaction['credit_debit'] == 'DBIT':
+                    je_account.credit_in_account_currency = float(transaction['amount'])
+                else:
+                    je_account.debit_in_account_currency = float(transaction['amount'])
+                bank_account_added = True
+            else:
+                # Totalization accounts should have the opposite of the counterparty
+                # This ensures the balance is zero
+                if transaction['credit_debit'] == 'DBIT':
+                    je_account.debit_in_account_currency = float(transaction['amount'])
+                else:
+                    je_account.credit_in_account_currency = float(transaction['amount'])
+    
+    # Set multi currency if template specifies it
+    if hasattr(template, 'multi_currency') and template.multi_currency:
+        journal_entry.multi_currency = 1
+    
+    # Add reference to the EBICS transaction
+    journal_entry.cheque_no = transaction.get('unique_reference', '')
+    journal_entry.cheque_date = transaction['date']
+    
+    # Add reference to the template used
+    if hasattr(journal_entry, 'from_template'):
+        journal_entry.from_template = template_name
+    
+    # Save the journal entry
+    journal_entry.insert()
+    
+    return {
+        'journal_entry': journal_entry.name,
+        'link': get_url_to_form("Journal Entry", journal_entry.name)
+    }
     

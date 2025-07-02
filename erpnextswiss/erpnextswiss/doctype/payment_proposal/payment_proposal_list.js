@@ -17,10 +17,33 @@ function prepare_payment_proposal() {
             try {
                 var d = new Date();
                 d = new Date(d.setDate(d.getDate() + response.message.planning_days));
-                frappe.prompt([
+                var default_company = frappe.defaults.get_default("Company");
+                
+                // Create the dialog
+                var dialog = frappe.prompt([
                         {'fieldname': 'date', 'fieldtype': 'Date', 'label': __('Include Payments Until'), 'reqd': 1, 'default': d},
                         {'fieldname': 'company', 'fieldtype': 'Link', 'label': __("Company"), 'options': 'Company', 
-                         'default': frappe.defaults.get_default("Company") },
+                         'default': default_company,
+                         'onchange': function() {
+                             // When company changes, update the default currency
+                             var company = dialog.get_value('company');
+                             if (company) {
+                                 frappe.call({
+                                     'method': 'frappe.client.get_value',
+                                     'args': {
+                                         'doctype': 'Company',
+                                         'filters': {'name': company},
+                                         'fieldname': 'default_currency'
+                                     },
+                                     'callback': function(r) {
+                                         if (r.message && r.message.default_currency) {
+                                             dialog.set_value('currency', r.message.default_currency);
+                                         }
+                                     }
+                                 });
+                             }
+                         }
+                        },
                         {'fieldname': 'currency', 'fieldtype': 'Link', 'label': __('Currency'), 'options': 'Currency'},
                     ],
                     function(values){
@@ -29,10 +52,26 @@ function prepare_payment_proposal() {
                     __('Payment Proposal'),
                     __('Create')
                 );
+                
+                // Set initial default currency based on default company
+                if (default_company) {
+                    frappe.call({
+                        'method': 'frappe.client.get_value',
+                        'args': {
+                            'doctype': 'Company',
+                            'filters': {'name': default_company},
+                            'fieldname': 'default_currency'
+                        },
+                        'callback': function(r) {
+                            if (r.message && r.message.default_currency) {
+                                dialog.set_value('currency', r.message.default_currency);
+                            }
+                        }
+                    });
+                }
             } catch (err) {
                 frappe.msgprint("Error: " + err.message);
             }
-            
         }
     });
  

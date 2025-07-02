@@ -14,6 +14,7 @@
   "user_id",
   "col_account",
   "company",
+  "bank_config",
   "key_password",
   "sec_sync",
   "synced_until",
@@ -128,6 +129,13 @@
    "reqd": 1
   },
   {
+   "fieldname": "bank_config",
+   "fieldtype": "Link",
+   "label": "Bank Configuration",
+   "options": "ebics Bank Config",
+   "description": "Select bank-specific EBICS settings"
+  },
+  {
    "fieldname": "col_sync",
    "fieldtype": "Column Break"
   },
@@ -185,6 +193,7 @@
    "share": 1
   }
  ],
+ "show_dashboard": 1,
  "sort_field": "modified",
  "sort_order": "DESC",
  "title_field": "title",

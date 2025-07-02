@@ -1,64 +1,265 @@
-<table class="table">
-    <tr>
-        <th style="width: 100px; ">{{ _("Date") }}</th>
-        <th style="width: 125px; text-align: right; " >{{ _("Amount") }}</th>
-        <th>{{ _("Party") }}</th>
-        <th>{{ _("Reference") }}</th>
-        <th>{{ _("Action") }}</th>
-    </tr>
+<style>
+    .bank-wizard-table {
+        margin-top: 20px;
+    }
+    .bank-wizard-table th {
+        background-color: #f5f5f5;
+        font-weight: 600;
+        padding: 12px;
+        border-bottom: 2px solid #ddd;
+    }
+    .bank-wizard-table td {
+        padding: 12px;
+        vertical-align: middle;
+    }
+    .bank-wizard-table tr:hover {
+        background-color: #f9f9f9;
+    }
+    .amount-debit {
+        color: #d9534f;
+        font-weight: 600;
+    }
+    .amount-credit {
+        color: #5cb85c;
+        font-weight: 600;
+    }
+    .party-info {
+        max-width: 300px;
+    }
+    .party-name {
+        font-weight: 500;
+        margin-bottom: 4px;
+    }
+    .party-address {
+        font-size: 12px;
+        color: #666;
+    }
+    .reference-info {
+        font-family: monospace;
+        font-size: 13px;
+        color: #333;
+    }
+    .action-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        align-items: center;
+    }
+    .btn-bank-wizard {
+        padding: 6px 12px;
+        font-size: 13px;
+        border-radius: 4px;
+        white-space: nowrap;
+        min-width: 100px;
+    }
+    .btn-quick-match {
+        min-width: auto;
+        padding: 6px 10px;
+        font-weight: bold;
+    }
+    .btn-matched {
+        background-color: #5cb85c;
+        color: white;
+        border-color: #4cae4c;
+    }
+    .btn-matched:hover {
+        background-color: #449d44;
+        border-color: #398439;
+    }
+    .btn-party {
+        background-color: #f0ad4e;
+        color: white;
+        border-color: #eea236;
+    }
+    .btn-party:hover {
+        background-color: #ec971f;
+        border-color: #d58512;
+    }
+    .btn-generic {
+        background-color: #5bc0de;
+        color: white;
+        border-color: #46b8da;
+    }
+    .btn-generic:hover {
+        background-color: #31b0d5;
+        border-color: #269abc;
+    }
+    .btn-intermediate {
+        background-color: #868686;
+        color: white;
+        border-color: #757575;
+    }
+    .btn-intermediate:hover {
+        background-color: #6d6d6d;
+        border-color: #5a5a5a;
+    }
+    .transaction-icon {
+        font-size: 16px;
+        margin-right: 8px;
+    }
+    .icon-debit {
+        color: #d9534f;
+    }
+    .icon-credit {
+        color: #5cb85c;
+    }
+</style>
+
+<table class="table table-hover bank-wizard-table">
+    <thead>
+        <tr>
+            <th style="width: 110px;">{{ _("Date") }}</th>
+            <th style="width: 140px; text-align: right;">{{ _("Amount") }}</th>
+            <th style="width: 35%;">{{ _("Party") }}</th>
+            <th style="width: 20%;">{{ _("Reference") }}</th>
+            <th>{{ _("Actions") }}</th>
+        </tr>
+    </thead>
+    <tbody>
     {% for transaction in transactions %}
     <tr id="row-transaction-{{ transaction.txid }}">
-        <td>{{ frappe.utils.get_datetime(transaction.date).strftime("%d.%m.%Y") }}</td>
-        <td style="text-align: right; " >
-            
-            {% if transaction.credit_debit == "DBIT" %}
-                <span class="octicon octicon-repo-pull"></span>
-            {% else %}
-                <span class="octicon octicon-repo-push"></span>
-            {% endif %}
-            {{ transaction.currency }} {{ "{:,.2f}".format(transaction.amount or 0).replace(",", "`") }}
-        </td>
-        <td>{{ transaction.party_name }}{% if transaction.party_address %}<br> {{ transaction.party_address }}{% endif %}</td>
-        <td>{{ transaction.transaction_reference }}</td>
         <td>
-          {% if transaction.credit_debit == "DBIT" %}
-            <!-- Supplier -->
-            {% if transaction.amount == transaction.matched_amount %}
-             {% if transaction.invoice_matches %}
-               <button type="submit" class="btn btn-xs btn-primary" id="btn-quick-pinv-{{ transaction.txid }}">&rArr;</button>
-             {% endif %}
-             {% if transaction.expense_matches %}
-               <button type="submit" class="btn btn-xs btn-primary" id="btn-quick-exp-{{ transaction.txid }}">&rArr;</button>
-             {% endif %}
+            <strong>{{ frappe.utils.get_datetime(transaction.date).strftime("%d.%m.%Y") }}</strong>
+        </td>
+        <td style="text-align: right;">
+            {% if transaction.credit_debit == "DBIT" %}
+                <span class="transaction-icon icon-debit">
+                    <i class="fa fa-arrow-circle-right"></i>
+                </span>
+                <span class="amount-debit">
+                    {{ transaction.currency }} {{ "{:,.2f}".format(transaction.amount or 0).replace(",", "'") }}
+                </span>
+            {% else %}
+                <span class="transaction-icon icon-credit">
+                    <i class="fa fa-arrow-circle-left"></i>
+                </span>
+                <span class="amount-credit">
+                    {{ transaction.currency }} {{ "{:,.2f}".format(transaction.amount or 0).replace(",", "'") }}
+                </span>
             {% endif %}
-            {% if transaction.invoice_matches %}
-             <button type="submit" class="btn btn-xs btn-success" id="btn-close-pinv-{{ transaction.txid }}">{{ _("Purchase Invoice") }}</button>
+        </td>
+        <td class="party-info">
+            <div class="party-name">{{ transaction.party_name }}</div>
+            {% if transaction.party_address %}
+                <div class="party-address">{{ transaction.party_address }}</div>
             {% endif %}
-            {% if transaction.party_match %}
-             <button type="submit" class="btn btn-xs btn-warning" id="btn-close-supplier-{{ transaction.txid }}">{{ _("Supplier") }}</button>
-            {% endif %}
-            {% if transaction.expense_matches %}
-             <button type="submit" class="btn btn-xs btn-success" id="btn-close-exp-{{ transaction.txid }}">{{ _("Expense Claim") }}</button>
-            {% endif %}
-            {% if transaction.employee_match %}
-             <button type="submit" class="btn btn-xs btn-warning" id="btn-close-employee-{{ transaction.txid }}">{{ _("Employee") }}</button>
-            {% endif %}
-            <button type="submit" class="btn btn-xs btn-default" id="btn-close-payable-{{ transaction.txid }}">{{ _("Payables") }}</button>
-          {% else %}
-            <!-- Customer -->
-            {% if transaction.amount == transaction.matched_amount %}
-             <button type="submit" class="btn btn-xs btn-primary" id="btn-quick-sinv-{{ transaction.txid }}">&rArr;</button>
-            {% endif %}
-            {% if transaction.invoice_matches %}
-             <button type="submit" class="btn btn-xs btn-success" id="btn-close-sinv-{{ transaction.txid }}">{{ _("Sales Invoice") }}</button>
-            {% endif %}
-            {% if transaction.party_match %}
-             <button type="submit" class="btn btn-xs btn-warning" id="btn-close-customer-{{ transaction.txid }}">{{ _("Customer") }}</button>
-            {% endif %}
-            <button type="submit" class="btn btn-xs btn-default" id="btn-close-receivable-{{ transaction.txid }}">{{ _("Receivables") }}</button>
-          {% endif %}
-          <button type="submit" class="btn btn-xs btn-default" id="btn-close-intermediate-{{ transaction.txid }}">{{ _("Intermediate") }}</button>
+        </td>
+        <td>
+            <div class="reference-info">{{ transaction.transaction_reference }}</div>
+        </td>
+        <td>
+            <div class="action-buttons">
+                {% if transaction.credit_debit == "DBIT" %}
+                    <!-- Outgoing payment (Debit) -->
+                    {% if transaction.amount == transaction.matched_amount %}
+                        {% if transaction.invoice_matches %}
+                            <button type="button" class="btn btn-bank-wizard btn-quick-match btn-matched" id="btn-quick-pinv-{{ transaction.txid }}" 
+                                    data-toggle="tooltip" data-placement="top"
+                                    title="{{ _('Quick action: Create and submit payment entry automatically for matched purchase invoice(s)')|e }}">
+                                <i class="fa fa-bolt"></i>
+                            </button>
+                        {% endif %}
+                        {% if transaction.expense_matches %}
+                            <button type="button" class="btn btn-bank-wizard btn-quick-match btn-matched" id="btn-quick-exp-{{ transaction.txid }}" 
+                                    data-toggle="tooltip" data-placement="top"
+                                    title="{{ _('Quick action: Create and submit payment entry automatically for matched expense claim(s)')|e }}">
+                                <i class="fa fa-bolt"></i>
+                            </button>
+                        {% endif %}
+                    {% endif %}
+                    
+                    {% if transaction.invoice_matches %}
+                        <button type="button" class="btn btn-bank-wizard btn-matched" id="btn-close-pinv-{{ transaction.txid }}" 
+                                data-toggle="tooltip" data-placement="top"
+                                title="{{ _('Create payment entry linked to purchase invoice(s): {0}').format(transaction.invoice_matches)|e }}">
+                            <i class="fa fa-file-text-o"></i> {{ _("Purchase Invoice") }}
+                        </button>
+                    {% endif %}
+                    
+                    {% if transaction.expense_matches %}
+                        <button type="button" class="btn btn-bank-wizard btn-matched" id="btn-close-exp-{{ transaction.txid }}"
+                                data-toggle="tooltip" data-placement="top"
+                                title="{{ _('Create payment entry linked to expense claim(s): {0}').format(transaction.expense_matches)|e }}">
+                            <i class="fa fa-money"></i> {{ _("Expense Claim") }}
+                        </button>
+                    {% endif %}
+                    
+                    {% if transaction.party_match %}
+                        <button type="button" class="btn btn-bank-wizard btn-party" id="btn-close-supplier-{{ transaction.txid }}"
+                                data-toggle="tooltip" data-placement="top"
+                                title="{{ _('Create payment entry for supplier: {0}').format(transaction.party_match)|e }}">
+                            <i class="fa fa-truck"></i> {{ _("Supplier") }}
+                        </button>
+                    {% endif %}
+                    
+                    {% if transaction.employee_match %}
+                        <button type="button" class="btn btn-bank-wizard btn-party" id="btn-close-employee-{{ transaction.txid }}"
+                                data-toggle="tooltip" data-placement="top"
+                                title="{{ _('Create payment entry for employee: {0}').format(transaction.employee_match)|e }}">
+                            <i class="fa fa-user"></i> {{ _("Employee") }}
+                        </button>
+                    {% endif %}
+                    
+                    <button type="button" class="btn btn-bank-wizard btn-generic" id="btn-close-payable-{{ transaction.txid }}"
+                            data-toggle="tooltip" data-placement="top"
+                            title="{{ _('Create payment entry to payables account with default supplier')|e }}">
+                        <i class="fa fa-credit-card"></i> {{ _("Payables") }}
+                    </button>
+                {% else %}
+                    <!-- Incoming payment (Credit) -->
+                    {% if transaction.amount == transaction.matched_amount and transaction.invoice_matches %}
+                        <button type="button" class="btn btn-bank-wizard btn-quick-match btn-matched" id="btn-quick-sinv-{{ transaction.txid }}" 
+                                data-toggle="tooltip" data-placement="top"
+                                title="{{ _('Quick action: Create and submit payment entry automatically for matched sales invoice(s)')|e }}">
+                            <i class="fa fa-bolt"></i>
+                        </button>
+                    {% endif %}
+                    
+                    {% if transaction.invoice_matches %}
+                        <button type="button" class="btn btn-bank-wizard btn-matched" id="btn-close-sinv-{{ transaction.txid }}"
+                                data-toggle="tooltip" data-placement="top"
+                                title="{{ _('Create payment entry linked to sales invoice(s): {0}').format(transaction.invoice_matches)|e }}">
+                            <i class="fa fa-file-text-o"></i> {{ _("Sales Invoice") }}
+                        </button>
+                    {% endif %}
+                    
+                    {% if transaction.party_match %}
+                        <button type="button" class="btn btn-bank-wizard btn-party" id="btn-close-customer-{{ transaction.txid }}"
+                                data-toggle="tooltip" data-placement="top"
+                                title="{{ _('Create payment entry for customer: {0}').format(transaction.party_match)|e }}">
+                            <i class="fa fa-user-circle"></i> {{ _("Customer") }}
+                        </button>
+                    {% endif %}
+                    
+                    <button type="button" class="btn btn-bank-wizard btn-generic" id="btn-close-receivable-{{ transaction.txid }}"
+                            data-toggle="tooltip" data-placement="top"
+                            title="{{ _('Create payment entry to receivables account with default customer')|e }}">
+                        <i class="fa fa-inbox"></i> {{ _("Receivables") }}
+                    </button>
+                {% endif %}
+                
+                <button type="button" class="btn btn-bank-wizard btn-intermediate" id="btn-close-intermediate-{{ transaction.txid }}"
+                        data-toggle="tooltip" data-placement="top"
+                        title="{{ _('Create internal transfer to/from intermediate account for later reconciliation')|e }}">
+                    <i class="fa fa-exchange"></i> {{ _("Intermediate") }}
+                </button>
+                
+                <button type="button" class="btn btn-bank-wizard btn-generic" id="btn-journal-entry-{{ transaction.txid }}"
+                        data-toggle="tooltip" data-placement="top"
+                        title="{{ _('Create a Journal Entry using a template')|e }}">
+                    <i class="fa fa-book"></i> {{ _("Journal Entry") }}
+                </button>
+            </div>
         </td>
     </tr>
     {% endfor %}
+    </tbody>
 </table>
+
+{% if transactions|length == 0 %}
+<div class="text-center" style="padding: 40px;">
+    <i class="fa fa-check-circle" style="font-size: 48px; color: #5cb85c;"></i>
+    <h4 style="margin-top: 20px;">{{ _("No pending transactions") }}</h4>
+    <p>{{ _("All transactions have been processed.") }}</p>
+</div>
+{% endif %}

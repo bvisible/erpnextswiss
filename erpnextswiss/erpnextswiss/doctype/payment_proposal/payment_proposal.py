@@ -35,13 +35,24 @@ class PaymentProposal(Document):
             if not pinv.supplier_address:
                 frappe.throw( _("Address missing for purchase invoice <a href=\"/desk#Form/Purchase Invoice/{0}\">{0}</a>").format(pinv.name) )
             # check target account info
-            if purchase_invoice.payment_type == "ESR":
+            if purchase_invoice.payment_type == "ESR" or purchase_invoice.payment_type == "QRR":
                 if not purchase_invoice.esr_reference or not purchase_invoice.esr_participation_number:
-                    frappe.throw( _("ESR: missing transaction information (participant number or reference) in <a href=\"/desk#Form/Purchase Invoice/{0}\">{0}</a>").format(pinv.name) )
-            else:
+                    frappe.throw( _("{0}: missing transaction information (participant number or reference) in <a href=\"/desk#Form/Purchase Invoice/{1}\">{1}</a>").format(
+                        purchase_invoice.payment_type, pinv.name) )
+            elif purchase_invoice.payment_type == "SCOR":
+                # SCOR requires IBAN and structured reference
                 supl = frappe.get_doc("Supplier", pinv.supplier)
                 if not supl.iban:
-                    frappe.throw( _("Missing IBAN for purchase invoice <a href=\"/desk#Form/Purchase Invoice/{0}\">{0}</a>").format(pinv.name) )
+                    frappe.throw( _("SCOR: missing IBAN for purchase invoice <a href=\"/desk#Form/Purchase Invoice/{0}\">{0}</a>").format(pinv.name) )
+                if not purchase_invoice.external_reference:
+                    frappe.throw( _("SCOR: missing structured reference for purchase invoice <a href=\"/desk#Form/Purchase Invoice/{0}\">{0}</a>").format(pinv.name) )
+            else:
+                # Check if the purchase invoice has an ESR participation number first
+                if not pinv.get('esr_participation_number'):
+                    # If not, check the supplier's IBAN
+                    supl = frappe.get_doc("Supplier", pinv.supplier)
+                    if not supl.iban:
+                        frappe.throw( _("Missing IBAN for purchase invoice <a href=\"/desk#Form/Purchase Invoice/{0}\">{0}</a>").format(pinv.name) )
         # check expense records
         for expense_claim in self.expenses:
             emp = frappe.get_doc("Employee", expense_claim.employee)
@@ -89,13 +100,21 @@ class PaymentProposal(Document):
                         if exec_date.date() > due_date.date():
                             exec_date = due_date
                     payment_type = purchase_invoice.payment_type
-                    if payment_type == "ESR" or self.individual_payments == 1:
+                    if payment_type in ["ESR", "QRR", "SCOR"] or self.individual_payments == 1:
                         # run as individual payment (not aggregated)
                         supl = frappe.get_doc("Supplier", supplier)
                         addr = frappe.get_doc("Address", address)
+                        # For QRR, use ESR participation number as IBAN if available
+                        iban = supl.iban
+                        if payment_type == "QRR" and purchase_invoice.esr_participation_number:
+                            iban = purchase_invoice.esr_participation_number
+                        elif payment_type == "ESR" and purchase_invoice.esr_participation_number and 'CH' in purchase_invoice.esr_participation_number:
+                            # This is actually a QRR, use participation number as IBAN
+                            iban = purchase_invoice.esr_participation_number
+                            
                         self.add_payment(
                             receiver_name=supl.supplier_name, 
-                            iban=supl.iban, 
+                            iban=iban, 
                             payment_type=payment_type,
                             address_line1=addr.address_line1, 
                             address_line2="{0} {1}".format(addr.pincode, addr.city), 
@@ -131,7 +150,7 @@ class PaymentProposal(Document):
             if amount > 0:
                 supl = frappe.get_doc("Supplier", supplier)
                 addr = frappe.get_doc("Address", address)
-                if payment_type == "ESR":           # prevent if last invoice was by ESR, but others are also present -> pay as IBAN
+                if payment_type in ["ESR", "QRR", "SCOR"]:           # prevent if last invoice was by ESR/QRR/SCOR, but others are also present -> pay as IBAN
                     payment_type = "IBAN"
                 self.add_payment(
                     receiver_name=supl.supplier_name, 
@@ -392,7 +411,7 @@ class PaymentProposal(Document):
                 'id': "PMTINF-{0}-{1}".format(self.name, transaction_count),   # unique (in this file) identification for the payment ( e.g. PMTINF-01, PMTINF-PE-00005 )
                 'method': "TRF",             # payment method (TRF or TRA, no impact in Switzerland)
                 'batch': "true",             # batch booking (true or false; recommended true)
-                'required_execution_date': "{0}".format(payment.execution_date.split(" ")[0]),         # Requested Execution Date (e.g. 2010-02-22, remove time element)
+                'required_execution_date': payment.execution_date.strftime("%Y-%m-%d") if hasattr(payment.execution_date, 'strftime') else str(payment.execution_date),         # Requested Execution Date (e.g. 2010-02-22)
                 'debtor': {                    # debitor (technically ignored, but recommended)  
                     'name': html.escape(self.company),
                     'account': "{0}".format(payment_account.iban.replace(" ", "")),
@@ -417,6 +436,16 @@ class PaymentProposal(Document):
             if payment.payment_type == "SEPA":
                 # service level code (e.g. SEPA)
                 payment_record['service_level'] = "SEPA"
+                payment_record['iban'] = payment.iban.replace(" ", "")
+                payment_record['reference'] = payment.reference
+            elif payment.payment_type == "QRR":
+                # QRR payment type
+                payment_record['service_level'] = "QRR"
+                payment_record['esr_participation_number'] = payment.esr_participation_number.replace(" ", "")  # QR-IBAN
+                payment_record['esr_reference'] = payment.esr_reference.replace(" ", "")  # QR-Reference
+            elif payment.payment_type == "SCOR":
+                # SCOR (Structured Creditor Reference) payment type
+                payment_record['service_level'] = "SCOR"
                 payment_record['iban'] = payment.iban.replace(" ", "")
                 payment_record['reference'] = payment.reference
             elif payment.payment_type == "ESR":
@@ -500,21 +529,39 @@ class PaymentProposal(Document):
         
     @frappe.whitelist()
     def has_active_ebics_connection(self):
-        statements = frappe.db.sql("""
-            SELECT `ebics_connection` 
-            FROM `tabebics Statement`
-            WHERE `account` = "{account}"
-            ORDER BY `creation` DESC;
-            """.format(account=self.pay_from_account), as_dict=True)
-        if len(statements) > 0:
-            connections = frappe.db.sql("""
-            SELECT `activated`, `name` 
+        # First, try to find a direct connection based on the bank account
+        connections = frappe.db.sql("""
+            SELECT `name`, `activated` 
             FROM `tabebics Connection`
-            WHERE `name` = "{conn}";
-            """.format(conn=statements[0]['ebics_connection']), as_dict=True)
-            if len(connections) > 0:
-                return connections[0]['name']
-        return 0
+            WHERE `activated` = 1
+              AND `company` = %(company)s
+            ORDER BY `creation` DESC
+            LIMIT 1;
+            """, {'company': self.company}, as_dict=True)
+        
+        if connections:
+            return connections
+            
+        # If no direct connection, try the old method via statements
+        statements = frappe.db.sql("""
+            SELECT DISTINCT `ebics_connection` 
+            FROM `tabebics Statement`
+            WHERE `account` = %(account)s
+            ORDER BY `creation` DESC
+            LIMIT 1;
+            """, {'account': self.pay_from_account}, as_dict=True)
+            
+        if statements and statements[0].get('ebics_connection'):
+            connections = frappe.db.sql("""
+                SELECT `name`, `activated` 
+                FROM `tabebics Connection`
+                WHERE `name` = %(conn)s
+                  AND `activated` = 1;
+                """, {'conn': statements[0]['ebics_connection']}, as_dict=True)
+            if connections:
+                return connections
+                
+        return []
         
 # this function will create a new payment proposal
 @frappe.whitelist()

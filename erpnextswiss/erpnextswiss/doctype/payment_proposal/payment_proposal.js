@@ -16,8 +16,8 @@ frappe.ui.form.on('Payment Proposal', {
                 'method': 'has_active_ebics_connection',
                 'doc': frm.doc,
                 'callback': function(response) {
-                    if (response.message.toString() !== "0") {
-                        locals.ebics_connection = response.message[0]['name'];
+                    if (response.message && response.message.length > 0) {
+                        frm.ebics_connection = response.message[0]['name'];
                         frm.add_custom_button(__("Transmit by ebics"), function() {
                             transmit_ebics(frm);
                         }).addClass("btn-success");
@@ -152,14 +152,22 @@ function recalculate_total(frm) {
 }
 
 function transmit_ebics(frm) {
+    if (!frm.ebics_connection) {
+        frappe.msgprint(__("No EBICS connection found"));
+        return;
+    }
+    
     frappe.call({
-        'method': 'erpnextswiss.erpnextswiss.doctype.ebics_conncetion.ebics_connection.execute_payment',
+        'method': 'erpnextswiss.erpnextswiss.doctype.ebics_connection.ebics_connection.execute_payment',
         'args': {
-            'ebics_connection': locals.ebics_connection,
+            'ebics_connection': frm.ebics_connection,
             'payment_proposal': frm.doc.name
         },
         'callback': function (response) {
             frappe.msgprint( __("Payments transferred using ebics") );
+        },
+        'error': function(r) {
+            frappe.msgprint(__("Error transmitting payment: ") + (r.message || r.exc));
         }
     });
 }
