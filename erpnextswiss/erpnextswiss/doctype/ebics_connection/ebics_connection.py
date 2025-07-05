@@ -673,10 +673,16 @@ Technical details: {1}
                 frappe.log_error("EBICS Range Import Summary", f"Imported {statements_imported} statements out of {len(data)} received")
                 
         except fintech.ebics.EbicsFunctionalError as err:
-            if "{0}".format(err) == "EBICS_NO_DOWNLOAD_DATA_AVAILABLE":
+            error_msg = "{0}".format(err)
+            if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in error_msg:
                 frappe.log_error("EBICS No Data", f"No data available for range {from_date} to {to_date}")
+                # Update sync date even if no data to avoid getting stuck
+                self.synced_until = to_date if isinstance(to_date, date) else datetime.strptime(to_date, "%Y-%m-%d").date()
+                self.save()
+                frappe.db.commit()
+                frappe.msgprint(f"No bank statements available for the period {from_date} to {to_date}", indicator='orange')
             else:
-                frappe.log_error("EBICS Range Error", "{0}".format(err))
+                frappe.log_error("EBICS Range Error", error_msg)
                 raise
         except Exception as err:
             frappe.log_error("EBICS Range Error", f"Error in get_transactions_range: {str(err)}")
@@ -759,12 +765,15 @@ Technical details: {1}
                         statement_date = meta.get('statement_date')
                         if statement_date and statement_date != date_param:
                             if debug:
-                                print(f"Skipping statement with date {statement_date}, expected {date_param}")
+                                print(f"WARNING: Statement date {statement_date} differs from requested {date_param}")
                             frappe.log_error(
-                                "EBICS Date Filter",
-                                f"Date mismatch: Requested {date_param}, got {statement_date} for {bank_statement_id}"
+                                "EBICS Date Mismatch Warning",
+                                f"Bank returned statement for {statement_date} when we requested {date_param}. "
+                                f"This might indicate the bank has no data for {date_param} or returns closest available date. "
+                                f"Statement ID: {bank_statement_id}"
                             )
-                            continue
+                            # Don't skip - the bank might be returning the closest available data
+                            # continue
                         
                         # Check if this statement already exists
                         if bank_statement_id:
@@ -830,12 +839,18 @@ Technical details: {1}
                     frappe.db.commit()
                     
         except fintech.ebics.EbicsFunctionalError as err:
-            if "{0}".format(err) == "EBICS_NO_DOWNLOAD_DATA_AVAILABLE":
+            error_msg = "{0}".format(err)
+            if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in error_msg:
                 # this is not a problem, simply no data
                 frappe.log_error("EBICS No Data", f"No data available for date {date_param}")
+                # Update sync date even if no data to avoid getting stuck
+                if not self.synced_until or self.synced_until < datetime.strptime(date_param, "%Y-%m-%d").date():
+                    self.synced_until = date_param
+                    self.save()
+                    frappe.db.commit()
                 pass
             else:
-                frappe.log_error("EBICS Interface Error", "{0}".format(err))
+                frappe.log_error("EBICS Interface Error", error_msg)
                 raise
         except Exception as err:
             frappe.throw( "{0}".format(err), _("Error") )

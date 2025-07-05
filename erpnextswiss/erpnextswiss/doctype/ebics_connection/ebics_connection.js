@@ -51,18 +51,6 @@ frappe.ui.form.on('ebics Connection', {
                                     description: __('Start date for synchronization')
                                 },
                                 {
-                                    fieldname: 'to_date',
-                                    fieldtype: 'Date',
-                                    label: __('To Date'),
-                                    default: today,
-                                    reqd: 1,
-                                    description: __('End date for synchronization (inclusive)')
-                                },
-                                {
-                                    fieldname: 'column_break_1',
-                                    fieldtype: 'Column Break'
-                                },
-                                {
                                     fieldname: 'sync_mode',
                                     fieldtype: 'Select',
                                     label: __('Sync Mode'),
@@ -71,11 +59,16 @@ frappe.ui.form.on('ebics Connection', {
                                     description: __('Range: Get all at once, Daily: Day by day')
                                 },
                                 {
-                                    fieldname: 'debug_mode',
-                                    fieldtype: 'Check',
-                                    label: __('Debug Mode'),
-                                    default: 0,
-                                    description: __('Enable detailed logging')
+                                    fieldname: 'column_break_1',
+                                    fieldtype: 'Column Break'
+                                },
+                                {
+                                    fieldname: 'to_date',
+                                    fieldtype: 'Date',
+                                    label: __('To Date'),
+                                    default: today,
+                                    reqd: 1,
+                                    description: __('End date for synchronization (inclusive)')
                                 },
                                 {
                                     fieldname: 'section_break_2',
@@ -187,6 +180,105 @@ frappe.ui.form.on('ebics Connection', {
                                                 }
                                             });
                                         }
+                                    }
+                                },
+                                {
+                                    fieldname: 'get_all_btn',
+                                    fieldtype: 'Button',
+                                    label: __('Get All Available'),
+                                    description: __('Retrieve all available statements from bank without date restrictions'),
+                                    click: function() {
+                                        // Show loading message
+                                        sync_dialog.set_df_property('preview_html', 'options', 
+                                            `<div class="alert alert-info">
+                                                <i class="fa fa-spinner fa-spin"></i> ${__('Retrieving all available statements from EBICS...')}
+                                            </div>`
+                                        );
+                                        
+                                        // Call server to get all available data
+                                        frappe.call({
+                                            method: 'erpnextswiss.erpnextswiss.ebics.get_all_available_statements',
+                                            args: {
+                                                connection_name: frm.doc.name,
+                                                debug: sync_dialog.get_value('debug_mode') || false
+                                            },
+                                            callback: function(r) {
+                                                if (r.message) {
+                                                    var info = r.message;
+                                                    var preview_html = `
+                                                        <div class="alert alert-info">
+                                                            <h5>${__('All Available Statements from Bank')}</h5>
+                                                            <div class="row">
+                                                                <div class="col-sm-6">
+                                                                    <p><strong>${__('Total Statements Found:')}</strong> <span class="badge badge-info">${info.total_found || 0}</span></p>
+                                                                    <p><strong>${__('Date Range:')}</strong> ${info.date_range || 'N/A'}</p>
+                                                                </div>
+                                                                <div class="col-sm-6">
+                                                                    <p><strong>${__('New Statements:')}</strong> <span class="badge badge-success">${info.new_statements || 0}</span></p>
+                                                                    <p><strong>${__('Already Imported:')}</strong> <span class="badge badge-warning">${info.existing_statements || 0}</span></p>
+                                                                </div>
+                                                            </div>
+                                                            ${info.dates_summary ? `
+                                                            <hr>
+                                                            <h6>${__('Statements by Date')}</h6>
+                                                            <div style="max-height: 300px; overflow-y: auto;">
+                                                                <table class="table table-sm table-bordered">
+                                                                    <thead>
+                                                                        <tr>
+                                                                            <th>${__('Date')}</th>
+                                                                            <th>${__('Count')}</th>
+                                                                            <th>${__('Status')}</th>
+                                                                        </tr>
+                                                                    </thead>
+                                                                    <tbody>
+                                                                        ${info.dates_summary.map(d => `
+                                                                            <tr class="${d.exists ? '' : 'table-success'}">
+                                                                                <td>${frappe.datetime.str_to_user(d.date)}</td>
+                                                                                <td>${d.count}</td>
+                                                                                <td>${d.exists ? '<span class="badge badge-default">Imported</span>' : '<span class="badge badge-success">New</span>'}</td>
+                                                                            </tr>
+                                                                        `).join('')}
+                                                                    </tbody>
+                                                                </table>
+                                                            </div>
+                                                            ` : ''}
+                                                            <hr>
+                                                            <div class="text-center">
+                                                                <button class="btn btn-primary" onclick="
+                                                                    frappe.call({
+                                                                        method: 'erpnextswiss.erpnextswiss.ebics.import_all_available',
+                                                                        args: {
+                                                                            connection_name: '${frm.doc.name}',
+                                                                            debug: ${sync_dialog.get_value('debug_mode') || false}
+                                                                        },
+                                                                        callback: function(r) {
+                                                                            if (r.message && r.message.success) {
+                                                                                sync_dialog.hide();
+                                                                                frappe.msgprint({
+                                                                                    title: __('Import Complete'),
+                                                                                    message: r.message.message,
+                                                                                    indicator: 'green'
+                                                                                });
+                                                                                cur_frm.reload_doc();
+                                                                            }
+                                                                        }
+                                                                    });
+                                                                ">${__('Import All Available Statements')}</button>
+                                                            </div>
+                                                        </div>
+                                                    `;
+                                                    sync_dialog.set_df_property('preview_html', 'options', preview_html);
+                                                }
+                                            },
+                                            error: function(r) {
+                                                sync_dialog.set_df_property('preview_html', 'options', 
+                                                    `<div class="alert alert-danger">
+                                                        <p>${__('Error retrieving statements:')}</p>
+                                                        <p>${r.message || __('Unknown error')}</p>
+                                                    </div>`
+                                                );
+                                            }
+                                        });
                                     }
                                 },
                                 {

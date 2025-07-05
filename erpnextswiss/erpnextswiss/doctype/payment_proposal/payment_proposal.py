@@ -547,27 +547,301 @@ class PaymentProposal(Document):
         
         if connections:
             return connections
+    
+    @frappe.whitelist()
+    def attach_generated_file(self, file_content, file_name, file_type):
+        """Attach a generated file to this Payment Proposal"""
+        import base64
+        from frappe.utils.file_manager import save_file
+        
+        # Convert content to base64 if it's not already
+        if not file_content.startswith('data:'):
+            # Encode the content
+            encoded_content = base64.b64encode(file_content.encode()).decode()
+            file_content = f"data:application/xml;base64,{encoded_content}"
+        
+        # Save the file
+        file_doc = save_file(
+            fname=file_name,
+            content=file_content,
+            dt=self.doctype,
+            dn=self.name,
+            is_private=0
+        )
+        
+        # Update the checkbox based on file type
+        if file_type == "CAMT" and not self.bank_camt_file_generated:
+            frappe.db.set_value(self.doctype, self.name, 'bank_camt_file_generated', 1)
+        elif file_type == "EBICS" and not self.bank_ebics_file_generated:
+            frappe.db.set_value(self.doctype, self.name, 'bank_ebics_file_generated', 1)
+        
+        return file_doc.name
+    
+    @frappe.whitelist()
+    def generate_payment_file_from_proposal(self):
+        """Generate payment file (pain.001) from Payment Proposal payments"""
+        import time
+        import html
+        from erpnextswiss.erpnextswiss.page.payment_export.payment_export import make_line
+        
+        data = {}
+        settings = frappe.get_doc("ERPNextSwiss Settings", "ERPNextSwiss Settings")
+        data['xml_version'] = settings.get("xml_version")
+        data['xml_region'] = settings.get("banking_region")
+        data['msgid'] = "MSG-" + time.strftime("%Y%m%d%H%M%S")
+        data['date'] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        
+        # Company information
+        data['company'] = {
+            'name': html.escape(self.company)
+        }
+        company_address = get_primary_address(target_name=self.company, target_type="Company")
+        if company_address:
+            data['company']['address_line1'] = html.escape(company_address.address_line1[:35])
+            data['company']['address_line2'] = "{0} {1}".format(html.escape(company_address.pincode), html.escape(company_address.city))[:35]
+            data['company']['country_code'] = frappe.get_value("Country", company_address.country, "code").upper()
+            data['company']['pincode'] = html.escape(company_address.pincode[:16])
+            data['company']['city'] = html.escape(company_address.city[:35])
+            data['company']['street'] = html.escape(get_street_name(company_address.address_line1)[:35])
+            data['company']['building'] = html.escape(get_building_number(company_address.address_line1)[:5])
+        
+        # Bank account information (part of company in this template)
+        account = frappe.get_doc("Account", self.pay_from_account)
+        data['company']['iban'] = (account.iban or "").replace(" ", "")
+        data['company']['bic'] = account.bic or ""
+        
+        # Process payments
+        payments_data = []
+        control_sum = 0.0
+        
+        transaction_count = 0
+        for payment in self.payments:
+            # Get country code
+            country_code = frappe.get_value("Country", payment.receiver_country, "code")
+            if country_code:
+                country_code = country_code.upper()
+            else:
+                country_code = "CH"  # Default to Switzerland
             
-        # If no direct connection, try the old method via statements
-        statements = frappe.db.sql("""
-            SELECT DISTINCT `ebics_connection` 
-            FROM `tabebics Statement`
-            WHERE `account` = %(account)s
-            ORDER BY `creation` DESC
-            LIMIT 1;
-            """, {'account': self.pay_from_account}, as_dict=True)
-            
-        if statements and statements[0].get('ebics_connection'):
-            connections = frappe.db.sql("""
-                SELECT `name`, `activated` 
-                FROM `tabebics Connection`
-                WHERE `name` = %(conn)s
-                  AND `activated` = 1;
-                """, {'conn': statements[0]['ebics_connection']}, as_dict=True)
-            if connections:
-                return connections
+            # Build payment reference (end_to_end_id)
+            reference = (payment.reference or '')[:35]
+            if len(payment.reference or '') > 35:
+                reference = reference[:33] + ".."
                 
-        return []
+            payment_dict = {
+                'id': "PMTINF-{0}-{1}".format(self.name, transaction_count),
+                'method': 'TRF',
+                'batch': 'true',
+                'required_execution_date': payment.execution_date if payment.execution_date else self.date,
+                'debtor': {
+                    'name': self.company,
+                    'account': data['company']['iban'],
+                    'bic': data['company']['bic']
+                },
+                'instruction_id': "INSTRID-{0}-{1}".format(self.name, transaction_count),
+                'end_to_end_id': html.escape(reference),
+                'currency': payment.currency,
+                'amount': rounded(payment.amount, 2),
+                'creditor': {
+                    'name': html.escape(payment.receiver),
+                    'address_line1': html.escape((payment.receiver_address_line1 or '')[:35]),
+                    'address_line2': html.escape((payment.receiver_address_line2 or '')[:35]),
+                    'street': html.escape(get_street_name(payment.receiver_address_line1 or '')[:35]),
+                    'building': html.escape(get_building_number(payment.receiver_address_line1 or '')[:5]),
+                    'country_code': country_code,
+                    'pincode': html.escape((payment.receiver_pincode or '')[:16]),
+                    'city': html.escape((payment.receiver_city or '')[:35])
+                },
+                'is_salary': payment.is_salary
+            }
+            
+            # Handle payment type specific fields
+            if payment.payment_type == "SEPA":
+                payment_dict['service_level'] = "SEPA"
+                payment_dict['iban'] = (payment.iban or '').replace(" ", "")
+                payment_dict['reference'] = html.escape(payment.reference or '')
+            elif payment.payment_type == "QRR":
+                payment_dict['service_level'] = "QRR"
+                payment_dict['esr_participation_number'] = (payment.esr_participation_number or '').replace(" ", "")
+                payment_dict['esr_reference'] = payment.esr_reference or ''
+            elif payment.payment_type == "SCOR":
+                payment_dict['service_level'] = "SCOR"
+                payment_dict['iban'] = (payment.iban or '').replace(" ", "")
+                payment_dict['reference'] = payment.esr_reference or ''
+            elif payment.payment_type == "ESR":
+                # Check if it's actually a QRR masquerading as ESR
+                if payment.esr_participation_number and 'CH' in payment.esr_participation_number:
+                    payment_dict['service_level'] = "QRR"
+                    payment_dict['esr_participation_number'] = payment.esr_participation_number
+                    payment_dict['esr_reference'] = payment.esr_reference or ''
+                else:
+                    payment_dict['local_instrument'] = "CH01"
+                    payment_dict['service_level'] = "ESR"
+                    payment_dict['esr_participation_number'] = payment.esr_participation_number or ''
+                    payment_dict['esr_reference'] = payment.esr_reference or ''
+            else:  # IBAN
+                payment_dict['service_level'] = "IBAN"
+                payment_dict['iban'] = (payment.iban or '').replace(" ", "")
+                payment_dict['reference'] = html.escape(payment.reference or '')
+                if payment.bic:
+                    payment_dict['bic'] = payment.bic
+            
+            transaction_count += 1
+            payments_data.append(payment_dict)
+            control_sum += payment.amount
+        
+        data['transaction_count'] = len(payments_data)
+        data['control_sum'] = rounded(control_sum, 2)
+        data['payments'] = payments_data
+        
+        # Render the pain.001 template based on XML version and settings
+        single_payment = cint(self.get("single_payment"))
+        if data['xml_version'] == "09" and not single_payment:
+            content = frappe.render_template('erpnextswiss/erpnextswiss/doctype/payment_proposal/pain-001-001-09.html', data)
+        elif data['xml_version'] == "09" and single_payment:
+            content = frappe.render_template('erpnextswiss/erpnextswiss/doctype/payment_proposal/pain-001-001-09_single_payment.html', data)
+        elif single_payment:
+            content = frappe.render_template('erpnextswiss/erpnextswiss/doctype/payment_proposal/pain-001_single_payment.html', data)
+        else:
+            content = frappe.render_template('erpnextswiss/erpnextswiss/doctype/payment_proposal/pain-001.html', data)
+        
+        # Apply unidecode if enabled
+        if cint(settings.get("use_unidecode")) == 1:
+            content = unidecode(content)
+        
+        return {'content': content}
+    
+    @frappe.whitelist()
+    def create_payment_entries_from_proposal(self):
+        """Create Payment Entries from Payment Proposal payments"""
+        created_count = 0
+        payment_entries = []
+        
+        for payment in self.payments:
+            # Determine party type and name
+            party_type = None
+            party_name = payment.receiver_id
+            
+            # Try to identify if it's a Supplier or Employee
+            if frappe.db.exists("Supplier", payment.receiver_id):
+                party_type = "Supplier"
+            elif frappe.db.exists("Employee", payment.receiver_id):
+                party_type = "Employee"
+            else:
+                # Try to find by name
+                supplier = frappe.db.get_value("Supplier", {"supplier_name": payment.receiver}, "name")
+                if supplier:
+                    party_type = "Supplier"
+                    party_name = supplier
+                else:
+                    employee = frappe.db.get_value("Employee", {"employee_name": payment.receiver}, "name")
+                    if employee:
+                        party_type = "Employee"  
+                        party_name = employee
+            
+            if not party_type:
+                frappe.log_error(f"Could not determine party type for payment to {payment.receiver}", "Payment Entry Creation")
+                continue
+            
+            # Get the appropriate payable account
+            if party_type == "Supplier":
+                paid_to = frappe.get_value("Company", self.company, "default_payable_account")
+            else:  # Employee
+                paid_to = frappe.get_value("Company", self.company, "default_payroll_payable_account")
+            
+            # Get company currency
+            company_currency = frappe.get_value("Company", self.company, "default_currency")
+            
+            # Create Payment Entry
+            payment_entry = frappe.get_doc({
+                'doctype': 'Payment Entry',
+                'payment_type': 'Pay',
+                'posting_date': self.date,
+                'company': self.company,
+                'party_type': party_type,
+                'party': party_name,
+                'paid_from': self.pay_from_account,
+                'paid_from_account_currency': frappe.get_value("Account", self.pay_from_account, "account_currency") or company_currency,
+                'paid_to': paid_to,
+                'paid_to_account_currency': frappe.get_value("Account", paid_to, "account_currency") or company_currency,
+                'paid_amount': payment.amount,
+                'received_amount': payment.amount,
+                'reference_no': payment.reference,
+                'reference_date': payment.execution_date or self.date,
+                'remarks': f'Payment from Payment Proposal {self.name}',
+                'transaction_type': payment.payment_type
+            })
+            
+            # Add payment type specific fields
+            if payment.payment_type == "QRR":
+                payment_entry.esr_participant_number = payment.esr_participation_number
+                payment_entry.esr_reference = payment.esr_reference
+            elif payment.payment_type == "SCOR":
+                payment_entry.esr_participant_number = payment.esr_participation_number
+                payment_entry.esr_reference = payment.esr_reference
+            elif payment.payment_type == "ESR":
+                payment_entry.esr_participant_number = payment.esr_participation_number
+                payment_entry.esr_reference = payment.esr_reference
+            elif payment.payment_type == "IBAN" and payment.iban:
+                payment_entry.iban = payment.iban
+                if payment.bic:
+                    payment_entry.bic = payment.bic
+            
+            # Set exchange rate if needed
+            if payment.currency != frappe.get_value("Company", self.company, "default_currency"):
+                from erpnext.setup.utils import get_exchange_rate
+                payment_entry.source_exchange_rate = get_exchange_rate(payment.currency, 
+                    frappe.get_value("Company", self.company, "default_currency"), self.date)
+            
+            # Insert the payment entry
+            payment_entry.insert()
+            
+            # If we can find related purchase invoices, add references
+            if party_type == "Supplier" and payment.reference:
+                # Try to find a purchase invoice with this reference
+                purchase_invoices = frappe.get_all("Purchase Invoice", 
+                    filters={
+                        "supplier": party_name,
+                        "docstatus": 1,
+                        "outstanding_amount": [">", 0],
+                        "name": payment.reference
+                    },
+                    fields=["name", "grand_total", "outstanding_amount"])
+                
+                if not purchase_invoices:
+                    # Try with external reference
+                    purchase_invoices = frappe.get_all("Purchase Invoice", 
+                        filters={
+                            "supplier": party_name,
+                            "docstatus": 1,
+                            "outstanding_amount": [">", 0],
+                            "bill_no": payment.reference
+                        },
+                        fields=["name", "grand_total", "outstanding_amount"])
+                
+                # Add references for found invoices
+                for invoice in purchase_invoices:
+                    payment_entry.append("references", {
+                        "reference_doctype": "Purchase Invoice",
+                        "reference_name": invoice.name,
+                        "total_amount": invoice.grand_total,
+                        "outstanding_amount": invoice.outstanding_amount,
+                        "allocated_amount": min(payment.amount, invoice.outstanding_amount)
+                    })
+                    
+                payment_entry.save()
+            
+            # Submit the payment entry
+            payment_entry.submit()
+            payment_entries.append(payment_entry.name)
+            created_count += 1
+            
+        frappe.db.commit()
+        
+        return {
+            'created': created_count,
+            'payment_entries': payment_entries
+        }
         
 # this function will create a new payment proposal
 @frappe.whitelist()

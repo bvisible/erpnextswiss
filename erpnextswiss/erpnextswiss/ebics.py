@@ -255,8 +255,6 @@ def sync_date_range(connection_name, from_date, to_date):
         conn = frappe.get_doc("ebics Connection", connection_name)
         
         # Convert dates if needed
-        frappe.log_error("EBICS Date Debug", f"sync_date_range called with from_date={from_date} ({type(from_date)}), to_date={to_date} ({type(to_date)})")
-        
         if isinstance(from_date, str):
             # Try different date formats
             for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y"]:
@@ -296,12 +294,8 @@ def sync_date_range(connection_name, from_date, to_date):
         errors = []
         days_processed = 0
         
-        # Try to get all statements in the date range at once
-        frappe.log_error("EBICS Range Sync", f"Attempting to sync full range: {from_date} to {to_date}")
-        
         # Check if we should force daily sync
         if hasattr(frappe.flags, 'force_daily_sync') and frappe.flags.force_daily_sync:
-            frappe.log_error("EBICS Daily Sync", f"Forcing day-by-day sync for {days_to_sync} days")
             date = from_date
         else:
             try:
@@ -315,8 +309,6 @@ def sync_date_range(connection_name, from_date, to_date):
                     'date': ['between', [from_date.strftime("%Y-%m-%d"), to_date.strftime("%Y-%m-%d")]]
                 })
             except AttributeError:
-                # Fallback to day-by-day if get_transactions_range doesn't exist
-                frappe.log_error("EBICS Sync", "get_transactions_range not found, falling back to daily sync")
                 date = from_date
             
             while date <= to_date:
@@ -417,12 +409,9 @@ def preview_sync_range_detailed(connection_name, from_date, to_date, debug=False
             AND date <= %s
             ORDER BY date DESC
         """, (connection_name, from_date_obj, to_date_obj), as_dict=True)
-        
+
         existing_dates = {stmt['date'].strftime("%Y-%m-%d") for stmt in existing_statements}
-        
-        # Actually call EBICS to get available data
-        frappe.log_error("Preview Sync", f"Calling EBICS to check available statements for {from_date} to {to_date}")
-        
+
         available_statements = []
         total_available = 0
         statements_in_range = 0
@@ -432,7 +421,7 @@ def preview_sync_range_detailed(connection_name, from_date, to_date, debug=False
         try:
             client = conn.get_client()
             bank_config = conn.get_bank_config()
-            
+
             # Make the EBICS call
             if conn.ebics_version == "H005":
                 from fintech.ebics import BusinessTransactionFormat
@@ -454,6 +443,7 @@ def preview_sync_range_detailed(connection_name, from_date, to_date, debug=False
             # Analyze the returned data
             for account, content in data.items():
                 try:
+                    
                     from erpnextswiss.erpnextswiss.page.bank_wizard.bank_wizard import read_camt053_meta
                     meta = read_camt053_meta(content)
                     stmt_date = meta.get('statement_date')
@@ -475,9 +465,8 @@ def preview_sync_range_detailed(connection_name, from_date, to_date, debug=False
                                 statements_to_import += 1
                             else:
                                 date_summary[stmt_date]['exists'] = True
-                                
                 except Exception as e:
-                    frappe.log_error("Preview Parse Error", str(e))
+                    frappe.log_error("Preview Parse Error", f"Error parsing account {account}: {str(e)}\n{frappe.get_traceback()}")
                     
         except Exception as e:
             frappe.log_error("Preview EBICS Error", str(e))
@@ -529,18 +518,12 @@ def sync_date_range_advanced(connection_name, from_date, to_date, sync_mode='Ran
         
         conn = frappe.get_doc("ebics Connection", connection_name)
         
-        # Enable debug logging if requested
-        if debug:
-            frappe.log_error("EBICS Advanced Sync", f"Starting advanced sync with mode={sync_mode}, debug={debug}")
-        
         # Use appropriate sync method based on mode
         if sync_mode == 'Range':
             # Call the sync_date_range method
             return sync_date_range(connection_name, from_date, to_date)
         else:
-            # Daily mode - force day-by-day sync using the old logic
-            frappe.log_error("EBICS Daily Mode", f"Using day-by-day sync from {from_date} to {to_date}")
-            
+            # Daily mode - force day-by-day sync using the old logic            
             # Switch to use the regular sync logic but with date range
             frappe.flags.force_daily_sync = True
             result = sync_date_range(connection_name, from_date, to_date)
@@ -550,6 +533,383 @@ def sync_date_range_advanced(connection_name, from_date, to_date, sync_mode='Ran
             
     except Exception as e:
         frappe.log_error("Advanced Sync Error", str(e))
+        return {
+            'success': False,
+            'message': str(e)
+        }
+
+@frappe.whitelist()
+def diagnose_ebics_availability(connection_name, test_months=3):
+    """Diagnose what date ranges are available from EBICS"""
+    try:
+        if not frappe.db.exists("ebics Connection", connection_name):
+            frappe.throw("Connection not found: {0}".format(connection_name))
+        
+        conn = frappe.get_doc("ebics Connection", connection_name)
+        client = conn.get_client()
+        bank_config = conn.get_bank_config()
+        
+        results = {
+            'connection': connection_name,
+            'bank': conn.url,
+            'test_results': [],
+            'available_ranges': [],
+            'latest_available': None,
+            'oldest_available': None
+        }
+        
+        # Test different date ranges to find what's available
+        today = datetime.today().date()
+        
+        # Test past months
+        for months_ago in range(test_months):
+            test_date = add_days(today, -30 * months_ago)
+            try:
+                if conn.ebics_version == "H005":
+                    from fintech.ebics import BusinessTransactionFormat
+                    Z53_format = BusinessTransactionFormat(
+                        service=bank_config.statement_service_h005 or 'EOP',
+                        msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
+                        scope=bank_config.statement_scope_h005 or 'CH',
+                        version=bank_config.statement_version_h005 or '04',
+                        container=bank_config.statement_container_h005 or 'ZIP'
+                    )
+                    data = client.BTD(Z53_format, start_date=test_date, end_date=test_date)
+                else:
+                    data = client.Z53(start=test_date, end=test_date)
+                    
+                client.confirm_download()
+                
+                if data:
+                    results['test_results'].append({
+                        'date': test_date.strftime("%Y-%m-%d"),
+                        'status': 'available',
+                        'count': len(data)
+                    })
+                    if not results['latest_available'] or test_date > datetime.strptime(results['latest_available'], "%Y-%m-%d").date():
+                        results['latest_available'] = test_date.strftime("%Y-%m-%d")
+                    if not results['oldest_available'] or test_date < datetime.strptime(results['oldest_available'], "%Y-%m-%d").date():
+                        results['oldest_available'] = test_date.strftime("%Y-%m-%d")
+                else:
+                    results['test_results'].append({
+                        'date': test_date.strftime("%Y-%m-%d"),
+                        'status': 'no_data',
+                        'count': 0
+                    })
+            except fintech.ebics.EbicsFunctionalError as err:
+                if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in str(err):
+                    results['test_results'].append({
+                        'date': test_date.strftime("%Y-%m-%d"),
+                        'status': 'no_data',
+                        'error': 'No data available'
+                    })
+                else:
+                    results['test_results'].append({
+                        'date': test_date.strftime("%Y-%m-%d"),
+                        'status': 'error',
+                        'error': str(err)
+                    })
+        
+        # Test future dates (including July 2025)
+        for months_ahead in range(1, 4):
+            test_date = add_days(today, 30 * months_ahead)
+            try:
+                if conn.ebics_version == "H005":
+                    from fintech.ebics import BusinessTransactionFormat
+                    Z53_format = BusinessTransactionFormat(
+                        service=bank_config.statement_service_h005 or 'EOP',
+                        msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
+                        scope=bank_config.statement_scope_h005 or 'CH',
+                        version=bank_config.statement_version_h005 or '04',
+                        container=bank_config.statement_container_h005 or 'ZIP'
+                    )
+                    data = client.BTD(Z53_format, start_date=test_date, end_date=test_date)
+                else:
+                    data = client.Z53(start=test_date, end=test_date)
+                    
+                client.confirm_download()
+                
+                if data:
+                    results['test_results'].append({
+                        'date': test_date.strftime("%Y-%m-%d"),
+                        'status': 'available',
+                        'count': len(data)
+                    })
+                    if not results['latest_available'] or test_date > datetime.strptime(results['latest_available'], "%Y-%m-%d").date():
+                        results['latest_available'] = test_date.strftime("%Y-%m-%d")
+                else:
+                    results['test_results'].append({
+                        'date': test_date.strftime("%Y-%m-%d"),
+                        'status': 'no_data',
+                        'count': 0
+                    })
+            except fintech.ebics.EbicsFunctionalError as err:
+                if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in str(err):
+                    results['test_results'].append({
+                        'date': test_date.strftime("%Y-%m-%d"),
+                        'status': 'no_data',
+                        'error': 'No data available'
+                    })
+                else:
+                    results['test_results'].append({
+                        'date': test_date.strftime("%Y-%m-%d"),
+                        'status': 'error',
+                        'error': str(err)
+                    })
+        
+        # Test specifically July 2025
+        july_2025 = datetime(2025, 7, 15).date()
+        try:
+            if conn.ebics_version == "H005":
+                from fintech.ebics import BusinessTransactionFormat
+                Z53_format = BusinessTransactionFormat(
+                    service=bank_config.statement_service_h005 or 'EOP',
+                    msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
+                    scope=bank_config.statement_scope_h005 or 'CH',
+                    version=bank_config.statement_version_h005 or '04',
+                    container=bank_config.statement_container_h005 or 'ZIP'
+                )
+                data = client.BTD(Z53_format, start_date=july_2025, end_date=july_2025)
+            else:
+                data = client.Z53(start=july_2025, end=july_2025)
+                
+            client.confirm_download()
+            
+            results['july_2025_test'] = {
+                'status': 'available' if data else 'no_data',
+                'count': len(data) if data else 0
+            }
+        except Exception as e:
+            results['july_2025_test'] = {
+                'status': 'error',
+                'error': str(e)
+            }
+        
+        return results
+        
+    except Exception as e:
+        frappe.log_error("EBICS Diagnosis Error", str(e))
+        return {
+            'error': str(e)
+        }
+
+@frappe.whitelist()
+def get_all_available_statements(connection_name, debug=False):
+    """Get all available statements from EBICS without date restrictions"""
+    try:
+        import fintech.ebics
+        from fintech.ebics import BusinessTransactionFormat
+        
+        if not frappe.db.exists("ebics Connection", connection_name):
+            frappe.throw("Connection not found: {0}".format(connection_name))
+        
+        conn = frappe.get_doc("ebics Connection", connection_name)
+        client = conn.get_client()
+        bank_config = conn.get_bank_config()
+
+        # Make EBICS call without specific dates - this gets all available
+        try:
+            if conn.ebics_version == "H005":
+                from fintech.ebics import BusinessTransactionFormat
+                Z53_format = BusinessTransactionFormat(
+                    service=bank_config.statement_service_h005 or 'EOP',
+                    msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
+                    scope=bank_config.statement_scope_h005 or 'CH',
+                    version=bank_config.statement_version_h005 or '04',
+                    container=bank_config.statement_container_h005 or 'ZIP'
+                )
+                # Call without date parameters to get all available
+                data = client.BTD(Z53_format)
+            else:
+                # For H004, call Z53 without dates
+                data = client.Z53()
+                
+            client.confirm_download()
+            
+            if not data:
+                return {
+                    'total_found': 0,
+                    'new_statements': 0,
+                    'existing_statements': 0,
+                    'date_range': 'No data available',
+                    'dates_summary': []
+                }
+            
+            # Analyze the data
+            dates_summary = {}
+            total_found = len(data)
+            new_statements = 0
+            existing_statements = 0
+            
+            for account, content in data.items():
+                try:
+                    from erpnextswiss.erpnextswiss.page.bank_wizard.bank_wizard import read_camt053_meta
+                    meta = read_camt053_meta(content)
+                    stmt_date = meta.get('statement_date')
+                    bank_statement_id = meta.get('msgid')
+                    
+                    if stmt_date:
+                        if stmt_date not in dates_summary:
+                            dates_summary[stmt_date] = {'count': 0, 'exists': False}
+                        dates_summary[stmt_date]['count'] += 1
+                        
+                        # Check if already exists
+                        if bank_statement_id and frappe.db.exists('ebics Statement', {'bank_statement_id': bank_statement_id}):
+                            existing_statements += 1
+                            dates_summary[stmt_date]['exists'] = True
+                        else:
+                            new_statements += 1
+                            
+                except Exception as e:
+                    frappe.log_error("EBICS Parse Error", str(e))
+            
+            # Sort dates and create summary
+            sorted_dates = sorted(dates_summary.keys())
+            date_range = ""
+            if sorted_dates:
+                date_range = f"{sorted_dates[0]} to {sorted_dates[-1]}"
+            
+            dates_list = []
+            for date in sorted_dates:
+                dates_list.append({
+                    'date': date,
+                    'count': dates_summary[date]['count'],
+                    'exists': dates_summary[date]['exists']
+                })
+            
+            return {
+                'total_found': total_found,
+                'new_statements': new_statements,
+                'existing_statements': existing_statements,
+                'date_range': date_range,
+                'dates_summary': dates_list
+            }
+            
+        except fintech.ebics.EbicsFunctionalError as err:
+            error_msg = str(err)
+            if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in error_msg:
+                return {
+                    'total_found': 0,
+                    'new_statements': 0,
+                    'existing_statements': 0,
+                    'date_range': 'No data available from bank',
+                    'dates_summary': []
+                }
+            else:
+                frappe.throw("EBICS Error: {0}".format(error_msg))
+                
+    except Exception as e:
+        frappe.log_error("Get All Available Error", str(e))
+        frappe.throw(str(e))
+
+@frappe.whitelist()
+def import_all_available(connection_name, debug=False):
+    """Import all available statements from EBICS"""
+    try:
+        if not frappe.db.exists("ebics Connection", connection_name):
+            frappe.throw("Connection not found: {0}".format(connection_name))
+        
+        conn = frappe.get_doc("ebics Connection", connection_name)
+        client = conn.get_client()
+        bank_config = conn.get_bank_config()
+
+        # Get all available data
+        if conn.ebics_version == "H005":
+            from fintech.ebics import BusinessTransactionFormat
+            Z53_format = BusinessTransactionFormat(
+                service=bank_config.statement_service_h005 or 'EOP',
+                msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
+                scope=bank_config.statement_scope_h005 or 'CH',
+                version=bank_config.statement_version_h005 or '04',
+                container=bank_config.statement_container_h005 or 'ZIP'
+            )
+            data = client.BTD(Z53_format)
+        else:
+            data = client.Z53()
+            
+        client.confirm_download()
+        
+        if not data:
+            return {
+                'success': True,
+                'message': 'No statements available from bank',
+                'imported': 0
+            }
+        
+        # Import all statements
+        imported = 0
+        skipped = 0
+        errors = []
+        latest_date = None
+        
+        for account, content in data.items():
+            try:
+                from erpnextswiss.erpnextswiss.page.bank_wizard.bank_wizard import read_camt053_meta
+                meta = read_camt053_meta(content)
+                bank_statement_id = meta.get('msgid')
+                statement_date = meta.get('statement_date')
+                
+                # Track latest date
+                if statement_date:
+                    stmt_date_obj = datetime.strptime(statement_date, "%Y-%m-%d").date()
+                    if not latest_date or stmt_date_obj > latest_date:
+                        latest_date = stmt_date_obj
+                
+                # Check for duplicates
+                if bank_statement_id and frappe.db.exists('ebics Statement', {'bank_statement_id': bank_statement_id}):
+                    skipped += 1
+                    continue
+                
+                # Create statement
+                stmt = frappe.get_doc({
+                    'doctype': 'ebics Statement',
+                    'ebics_connection': connection_name,
+                    'file_name': account,
+                    'xml_content': content,
+                    'date': statement_date or datetime.today().strftime("%Y-%m-%d"),
+                    'company': conn.company
+                })
+                stmt.insert()
+                frappe.db.commit()
+                stmt.parse_content(debug=debug)
+                stmt.process_transactions()
+                imported += 1
+                
+            except Exception as e:
+                errors.append(f"Error importing {account}: {str(e)}")
+                frappe.log_error("Import Error", str(e))
+        
+        # Update synced_until date
+        if latest_date:
+            conn.synced_until = latest_date
+            conn.save()
+            frappe.db.commit()
+        
+        message = f"""
+        <h5>Import Complete</h5>
+        <p><strong>Statements Imported:</strong> {imported}</p>
+        <p><strong>Statements Skipped (already exist):</strong> {skipped}</p>
+        <p><strong>Total Processed:</strong> {len(data)}</p>
+        """
+        
+        if latest_date:
+            message += f"<p><strong>Synced Until:</strong> {latest_date.strftime('%d.%m.%Y')}</p>"
+        
+        if errors:
+            message += f"<hr><p class='text-danger'><strong>Errors:</strong> {len(errors)}</p>"
+            for error in errors[:5]:
+                message += f"<p class='text-muted'>{error}</p>"
+        
+        return {
+            'success': True,
+            'message': message,
+            'imported': imported,
+            'skipped': skipped,
+            'errors': len(errors)
+        }
+        
+    except Exception as e:
+        frappe.log_error("Import All Error", str(e))
         return {
             'success': False,
             'message': str(e)

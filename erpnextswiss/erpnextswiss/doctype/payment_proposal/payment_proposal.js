@@ -6,7 +6,35 @@ frappe.ui.form.on('Payment Proposal', {
         if (frm.doc.docstatus == 1) {
             // add download pain.001 button on submitted record
             frm.add_custom_button(__("Download bank file"), function() {
-                generate_bank_file(frm);
+                // Show dialog with two options
+                frappe.prompt([
+                    {
+                        fieldname: 'file_type',
+                        label: __('Select File Type'),
+                        fieldtype: 'Select',
+                        options: ['Download bank import file (CAMT)', 'Download bank import file (EBICS)'],
+                        reqd: 1,
+                        default: 'Download bank import file (CAMT)'
+                    }
+                ], function(values) {
+                    if (values.file_type === 'Download bank import file (EBICS)') {
+                        // Current behavior for EBICS
+                        generate_bank_file(frm);
+                        // Update checkbox
+                        if (!frm.doc.bank_ebics_file_generated) {
+                            frm.set_value('bank_ebics_file_generated', 1);
+                            frm.save();
+                        }
+                    } else {
+                        // New behavior with payment_export workflow
+                        show_payment_file_dialog(frm);
+                        // Update checkbox
+                        if (!frm.doc.bank_camt_file_generated) {
+                            frm.set_value('bank_camt_file_generated', 1);
+                            frm.save();
+                        }
+                    }
+                }, __('Select Download Type'), __('Continue'));
             }).addClass("btn-primary");
             frm.add_custom_button(__("Download Wise file"), function() {
                 generate_wise_file(frm);
@@ -74,6 +102,26 @@ function generate_bank_file(frm) {
                if (r.message) {
                     // prepare the xml file for download
                     download("payments.xml", r.message.content);
+                    
+                    // Attach the file to the document
+                    frappe.call({
+                         'method': 'attach_generated_file',
+                         'doc': frm.doc,
+                         'args': {
+                              'file_content': r.message.content,
+                              'file_name': 'payment_ebics_' + frm.doc.name + '.xml',
+                              'file_type': 'EBICS'
+                         },
+                         'callback': function(attach_r) {
+                              if (attach_r.message) {
+                                   frappe.show_alert({
+                                        message: __('File attached successfully'),
+                                        indicator: 'green'
+                                   });
+                                   frm.reload_doc();
+                              }
+                         }
+                    });
                } 
           }
      });     
@@ -151,12 +199,177 @@ function recalculate_total(frm) {
     cur_frm.set_value('total', total);
 }
 
+function show_payment_file_dialog(frm) {
+    // Generate payment file first
+    frappe.call({
+        'method': 'generate_payment_file_from_proposal',
+        'doc': frm.doc,
+        'callback': function(r) {
+            if (r.message && r.message.content) {
+                // Create dialog with download button
+                var d = new frappe.ui.Dialog({
+                    'fields': [
+                        {
+                            'fieldname': 'ht',
+                            'fieldtype': 'HTML',
+                            'options': '<p>' + __('Click on the button below to download the payment file.') + '</p>' +
+                                       '<p style="margin-top: 20px;"><a id="btn-download-xml" class="btn btn-primary btn-sm" ' +
+                                       'href="data:application/octet-stream;charset=utf-8,' + encodeURIComponent(r.message.content) + '" ' +
+                                       'download="payment_' + frm.doc.name + '.xml">' + 
+                                       __('Download payment file') + '</a></p>' +
+                                       '<p id="download-status" style="display: none; color: green; margin-bottom: 20px;">' + __('File downloaded successfully!') + '</p>' +
+                                       '<div id="validation-section" style="display: none; margin-top: 30px; border-top: 1px solid #d1d8dd; padding-top: 20px;">' +
+                                       '<p>' + __('Now you can create and validate the payment entries:') + '</p>' +
+                                       '<p style="margin-top: 10px;"><button id="btn-validate-payments" class="btn btn-success btn-sm' + 
+                                       (frm.doc.payment_entries_generated ? ' disabled' : '') + '"' +
+                                       (frm.doc.payment_entries_generated ? ' disabled' : '') + '>' + 
+                                       (frm.doc.payment_entries_generated ? __('Payment Entries Already Generated') : __('Create and Submit Payment Entries')) + 
+                                       '</button></p>' +
+                                       (frm.doc.payment_entries_generated ? '<p class="text-muted small">' + __('Payment entries have already been created for this proposal.') + '</p>' : '') +
+                                       '</div>'
+                        }
+                    ],
+                    size: 'small',
+                    title: __('Download Payment File'),
+                    primary_action_label: __('Close'),
+                    primary_action: function() {
+                        d.hide();
+                    }
+                });
+                
+                d.show();
+                
+                // Store dialog reference for validation
+                frm._payment_dialog = d;
+                
+                // Use jQuery to attach click handler for download button
+                d.$wrapper.on('click', '#btn-download-xml', function(e) {
+                    // Show download status and validation section
+                    d.$wrapper.find('#download-status').show();
+                    d.$wrapper.find('#validation-section').show();
+                    
+                    // Attach the CAMT file to the document
+                    frappe.call({
+                        'method': 'attach_generated_file',
+                        'doc': frm.doc,
+                        'args': {
+                            'file_content': r.message.content,
+                            'file_name': 'payment_camt_' + frm.doc.name + '.xml',
+                            'file_type': 'CAMT'
+                        },
+                        'callback': function(attach_r) {
+                            if (attach_r.message) {
+                                frappe.show_alert({
+                                    message: __('File attached successfully'),
+                                    indicator: 'green'
+                                });
+                                frm.reload_doc();
+                            }
+                        }
+                    });
+                });
+                
+                // Handle validation button click
+                d.$wrapper.on('click', '#btn-validate-payments', function(e) {
+                    // Check if payment entries already generated
+                    if (frm.doc.payment_entries_generated) {
+                        frappe.msgprint({
+                            title: __('Payment Entries Already Generated'),
+                            message: __('Payment entries have already been created for this proposal. You cannot regenerate them.'),
+                            indicator: 'orange'
+                        });
+                        return;
+                    }
+                    
+                    // Disable the button to prevent multiple clicks
+                    $(this).prop('disabled', true).text(__('Creating...'));
+                    
+                    // Call validate function
+                    validate_payment_entries(frm, function(success) {
+                        if (success) {
+                            d.hide();
+                        } else {
+                            // Re-enable button if there was an error
+                            $(e.target).prop('disabled', false).text(__('Create and Submit Payment Entries'));
+                        }
+                    });
+                });
+            } else {
+                frappe.msgprint(__('Error generating payment file'));
+            }
+        },
+        'error': function(r) {
+            frappe.msgprint(__('Error generating payment file: ') + (r.message || r.exc));
+        }
+    });
+}
+
+function validate_payment_entries(frm, callback) {
+    frappe.call({
+        'method': 'create_payment_entries_from_proposal',
+        'doc': frm.doc,
+        'callback': function(r) {
+            if (r.message && r.message.created) {
+                frappe.msgprint(__('Successfully created {0} payment entries', [r.message.created]));
+                
+                // Update checkbox using frappe.db.set_value for immediate effect
+                if (!frm.doc.payment_entries_generated) {
+                    frappe.db.set_value(frm.doc.doctype, frm.doc.name, 'payment_entries_generated', 1)
+                        .then(() => {
+                            // Refresh the form after the value is saved
+                            frm.reload_doc();
+                            if (callback) callback(true);
+                        });
+                } else {
+                    // Refresh the form
+                    frm.reload_doc();
+                    if (callback) callback(true);
+                }
+            } else {
+                if (callback) callback(false);
+            }
+        },
+        'error': function(r) {
+            frappe.msgprint(__('Error creating payment entries: ') + (r.message || r.exc));
+            if (callback) callback(false);
+        }
+    });
+}
+
 function transmit_ebics(frm) {
     if (!frm.ebics_connection) {
         frappe.msgprint(__("No EBICS connection found"));
         return;
     }
     
+    // Check if already sent
+    if (frm.doc.file_sent_to_ebics) {
+        frappe.confirm(
+            __('This payment file has already been transmitted via EBICS. Do you want to send it again?'),
+            function() {
+                // User clicked Yes - proceed with transmission
+                do_transmit_ebics(frm);
+            },
+            function() {
+                // User clicked No - do nothing
+            }
+        );
+    } else {
+        // Not yet sent - show normal confirmation
+        frappe.confirm(
+            __('Are you sure you want to transmit this payment file via EBICS?'),
+            function() {
+                // User clicked Yes
+                do_transmit_ebics(frm);
+            },
+            function() {
+                // User clicked No - do nothing
+            }
+        );
+    }
+}
+
+function do_transmit_ebics(frm) {
     frappe.call({
         'method': 'erpnextswiss.erpnextswiss.doctype.ebics_connection.ebics_connection.execute_payment',
         'args': {
@@ -165,6 +378,11 @@ function transmit_ebics(frm) {
         },
         'callback': function (response) {
             frappe.msgprint( __("Payments transferred using ebics") );
+            // Update checkbox
+            if (!frm.doc.file_sent_to_ebics) {
+                frm.set_value('file_sent_to_ebics', 1);
+                frm.save();
+            }
         },
         'error': function(r) {
             frappe.msgprint(__("Error transmitting payment: ") + (r.message || r.exc));

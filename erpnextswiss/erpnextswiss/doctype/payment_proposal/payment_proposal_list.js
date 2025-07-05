@@ -1,8 +1,8 @@
 frappe.listview_settings['Payment Proposal'] = {
     onload: function(listview) {
-        listview.page.add_menu_item( __("Create Payment Proposal"), function() {
+        listview.page.add_inner_button(__("Create Payment Proposal"), function() {
             prepare_payment_proposal();
-        });
+        }).addClass("btn-primary");
     }
 }
 

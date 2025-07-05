@@ -26,7 +26,13 @@
   "use_intermediate",
   "single_payment",
   "column_intermdiate_account",
-  "intermediate_account"
+  "intermediate_account",
+  "section_bank_status",
+  "file_sent_to_ebics",
+  "column_bank_status",
+  "bank_camt_file_generated",
+  "bank_ebics_file_generated",
+  "payment_entries_generated"
  ],
  "fields": [
   {
@@ -169,6 +175,47 @@
    "fieldname": "single_payment",
    "fieldtype": "Check",
    "label": "Execute as one single payment"
+  },
+  {
+   "fieldname": "section_bank_status",
+   "fieldtype": "Section Break",
+   "label": "Bank Status"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "file_sent_to_ebics",
+   "fieldtype": "Check",
+   "label": "File Sent to EBICS",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_bank_status",
+   "fieldtype": "Column Break"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "bank_camt_file_generated",
+   "fieldtype": "Check",
+   "label": "Bank CAMT File Generated",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "bank_ebics_file_generated",
+   "fieldtype": "Check",
+   "label": "Bank EBICS File Generated",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "0",
+   "fieldname": "payment_entries_generated",
+   "fieldtype": "Check",
+   "label": "Payment Entries Generated",
+   "read_only": 1
   }
  ],
  "in_create": 1,

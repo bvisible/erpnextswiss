@@ -5,6 +5,10 @@ frappe.ui.form.on('ebics Statement', {
     refresh: function(frm) {
         // Debug logging
         console.log(`ebics Statement refresh - ${frm.doc.name}: ${frm.doc.transactions ? frm.doc.transactions.length : 0} transactions, status: ${frm.doc.status}`);
+        // Add flag to prevent infinite loop
+        if (frm._reloading) {
+            return;
+        }
         
         // If document exists but transactions are not loaded, fetch them
         if (!frm.is_new() && (!frm.doc.transactions || frm.doc.transactions.length === 0)) {
@@ -40,6 +44,7 @@ frappe.ui.form.on('ebics Statement', {
                                             message: __('Transactions automatically loaded from XML: {0} transactions found.', [r.message.transaction_count]),
                                             indicator: 'green'
                                         });
+                                        frm._reloading = true;
                                         frm.reload_doc();
                                     } else {
                                         frappe.show_alert({
