@@ -6,10 +6,13 @@
 import frappe
 from frappe.model.document import Document
 import os
-import fintech
-fintech.register()
-from fintech.ebics import EbicsKeyRing, EbicsBank, EbicsUser, EbicsClient, BusinessTransactionFormat
-#from fintech.sepa import Account, SEPACreditTransfer
+try:
+    import fintech
+    fintech.register()
+    from fintech.ebics import EbicsKeyRing, EbicsBank, EbicsUser, EbicsClient, BusinessTransactionFormat
+    #from fintech.sepa import Account, SEPACreditTransfer
+except:
+    pass            # failed to load fintech, skip
 from frappe import _
 from frappe.utils.file_manager import save_file
 from frappe.utils.password import get_decrypted_password
@@ -147,7 +150,8 @@ class ebicsConnection(Document):
                     raise e
                     
             # Always try to create certificates
-            self.create_certificate()
+            if self.ebics_version == "H005":              # H005 requires certificates: create them
+                self.create_certificate()
             frappe.msgprint(_("Certificates created successfully"))
             
         except Exception as err:

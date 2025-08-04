@@ -41,7 +41,8 @@
    "fieldtype": "Link",
    "label": "Customer",
    "options": "Customer",
-   "reqd": 1
+   "reqd": 1,
+   "read_only": 1
   },
   {
    "fetch_from": "customer.customer_name",
@@ -162,8 +163,7 @@
   }
  ],
  "is_submittable": 1,
- "links": [],
- "modified": "2023-11-01 12:36:20.440450",
+ "modified": "2025-07-15 18:22:04.129616",
  "modified_by": "Administrator",
  "module": "ERPNextSwiss",
  "name": "Payment Reminder",
@@ -173,7 +173,7 @@
   {
    "amend": 1,
    "cancel": 1,
-   "create": 1,
+   "create": 0,
    "delete": 1,
    "email": 1,
    "export": 1,
@@ -188,7 +188,7 @@
   {
    "amend": 1,
    "cancel": 1,
-   "create": 1,
+   "create": 0,
    "delete": 1,
    "email": 1,
    "export": 1,
@@ -203,7 +203,7 @@
   {
    "amend": 1,
    "cancel": 1,
-   "create": 1,
+   "create": 0,
    "delete": 1,
    "email": 1,
    "export": 1,

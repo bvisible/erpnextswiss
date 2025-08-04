@@ -1,6 +1,6 @@
 frappe
 bs4
-factur-x
+factur-x>=2.3
 unidecode
 opencv-python
 pymupdf
@@ -8,3 +8,4 @@ fintech>=7.8.3
 pysftp
 icalendar
 unidecode
+lxml
