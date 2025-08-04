@@ -14,6 +14,7 @@ from frappe import _
 from frappe.utils.file_manager import save_file
 from frappe.utils.password import get_decrypted_password
 from datetime import datetime, date
+from erpnextswiss.erpnextswiss.ebics_utils import prepare_ebics_date, prepare_date_range, translate_ebics_error, log_ebics_request
 
 class ebicsConnection(Document):
     def before_save(self):
@@ -575,15 +576,92 @@ Technical details: {1}
             frappe.throw(_("Error transmitting payment: {0}").format(str(e)))
         
         return
+    
+    @frappe.whitelist()
+    def get_intraday_statements(self, date_param=None, debug=False):
+        """
+        Get intraday statements (Z52) for Swiss banks.
+        This provides real-time cash position information.
+        
+        Args:
+            date_param: Date to retrieve (defaults to today)
+            debug: Enable debug logging
+            
+        Returns:
+            dict: Account balances and pending transactions
+        """
+        # Use today if no date specified
+        if not date_param:
+            date_param = datetime.today().date()
+            
+        date_str = prepare_ebics_date(date_param)
+        
+        if debug:
+            frappe.log_error("EBICS Z52 Debug", f"Getting intraday statements for {date_str}")
+            
+        try:
+            client = self.get_client()
+            bank_config = self.get_bank_config()
+            
+            # Check if Z52 is supported
+            if not hasattr(client, 'Z52'):
+                frappe.throw(_("Z52 (intraday statements) not supported. Please update fintech library to version 7.8.3 or higher."))
+            
+            if self.ebics_version == "H005":
+                # For H005, create appropriate BTF for intraday statements
+                from fintech.ebics import BusinessTransactionFormat
+                Z52_format = BusinessTransactionFormat(
+                    service=bank_config.get('intraday_service_h005', 'STM'),
+                    msg_name='camt.052',
+                    scope=bank_config.statement_scope_h005 or 'CH',
+                    version=bank_config.statement_version_h005 or '04',
+                    container=bank_config.statement_container_h005 or 'ZIP'
+                )
+                data = client.BTD(Z52_format, start_date=date_str, end_date=date_str)
+            else:
+                # H004 - use Z52 directly
+                data = client.Z52(start=date_str, end=date_str)
+                
+            client.confirm_download()
+            
+            # Process the intraday data
+            intraday_info = {}
+            
+            if data:
+                for account, content in data.items():
+                    try:
+                        # Parse CAMT.052 content
+                        # TODO: Implement read_camt052_intraday in bank_wizard
+                        # For now, return raw content
+                        intraday_info[account] = {
+                            'raw_content': content,
+                            'timestamp': datetime.now().isoformat()
+                        }
+                    except Exception as e:
+                        if debug:
+                            frappe.log_error("EBICS Z52 Parse Error", str(e))
+                        continue
+                        
+            return intraday_info
+            
+        except fintech.ebics.EbicsFunctionalError as err:
+            error_msg = str(err)
+            if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in error_msg:
+                # No intraday data available - this is normal
+                return {}
+            else:
+                translated_error = translate_ebics_error(err.code if hasattr(err, 'code') else None, error_msg)
+                frappe.throw(translated_error)
+        except Exception as err:
+            frappe.log_error("EBICS Z52 Error", str(err))
+            frappe.throw(_("Error retrieving intraday statements: {0}").format(str(err)))
         
     def get_transactions_range(self, from_date, to_date, debug=False):
         """Get transactions for a date range instead of a single day"""
-        if isinstance(from_date, (date, datetime)):
-            from_date = from_date.strftime("%Y-%m-%d")
-        if isinstance(to_date, (date, datetime)):
-            to_date = to_date.strftime("%Y-%m-%d")
+        # Use utility function to ensure correct date format
+        from_date_str, to_date_str, from_date_obj, to_date_obj = prepare_date_range(from_date, to_date)
             
-        frappe.log_error("EBICS Range Debug", f"get_transactions_range called for range: {from_date} to {to_date}")
+        frappe.log_error("EBICS Range Debug", f"get_transactions_range called for range: {from_date_str} to {to_date_str}")
         
         try:
             client = self.get_client()
@@ -598,15 +676,15 @@ Technical details: {1}
                     version=bank_config.statement_version_h005 or '04',
                     container=bank_config.statement_container_h005 or 'ZIP'
                 )
-                frappe.log_error("EBICS BTD Range Debug", f"Calling BTD with range: {from_date} to {to_date}")
-                data = client.BTD(Z53_format, start_date=from_date, end_date=to_date)
+                frappe.log_error("EBICS BTD Range Debug", f"Calling BTD with range: {from_date_str} to {to_date_str}")
+                data = client.BTD(Z53_format, start_date=from_date_str, end_date=to_date_str)
             else:
-                frappe.log_error("EBICS Z53 Range Debug", f"Calling Z53 with range: {from_date} to {to_date}")
-                data = client.Z53(start=from_date, end=to_date)
+                frappe.log_error("EBICS Z53 Range Debug", f"Calling Z53 with range: {from_date_str} to {to_date_str}")
+                data = client.Z53(start=from_date_str, end=to_date_str)
                 
             client.confirm_download()
             
-            frappe.log_error("EBICS Range Data Debug", f"Data received from EBICS: {len(data)} accounts for range {from_date} to {to_date}")
+            frappe.log_error("EBICS Range Data Debug", f"Data received from EBICS: {len(data)} accounts for range {from_date_str} to {to_date_str}")
             
             if len(data) > 0:
                 # Collect all unique dates to debug
@@ -623,8 +701,8 @@ Technical details: {1}
                         if statement_date:
                             unique_dates.add(statement_date)
                             stmt_date = datetime.strptime(statement_date, "%Y-%m-%d").date()
-                            from_dt = datetime.strptime(from_date, "%Y-%m-%d").date()
-                            to_dt = datetime.strptime(to_date, "%Y-%m-%d").date()
+                            from_dt = from_date_obj
+                            to_dt = to_date_obj
                             
                             if not (from_dt <= stmt_date <= to_dt):
                                 frappe.log_error(
@@ -689,10 +767,10 @@ Technical details: {1}
             raise
             
     def get_transactions(self, date_param, debug=False):
-        if isinstance(date_param, (date, datetime)):
-            date_param = date_param.strftime("%Y-%m-%d")
+        # Use utility function to ensure correct date format
+        date_str = prepare_ebics_date(date_param)
 
-        frappe.log_error("EBICS Transaction Debug", f"get_transactions called for date: {date_param}")
+        frappe.log_error("EBICS Transaction Debug", f"get_transactions called for date: {date_str}")
 
         try:
             client = self.get_client()
@@ -712,28 +790,28 @@ Technical details: {1}
                 )
                 
                 # Download using BTD with the Z53 format
-                frappe.log_error("EBICS BTD Debug", f"Calling BTD with date: {date_param}")
-                data = client.BTD(Z53_format, start_date=date_param, end_date=date_param)
+                frappe.log_error("EBICS BTD Debug", f"Calling BTD with date: {date_str}")
+                data = client.BTD(Z53_format, start_date=date_str, end_date=date_str)
             else:
                 # use version 2.5 (H004)
                 # Use bank-specific order type if available
                 order_type = bank_config.statement_order_type_h004 or 'Z53'
                 if order_type == 'Z53':
-                    frappe.log_error("EBICS Z53 Debug", f"Calling Z53 with date: {date_param}")
+                    frappe.log_error("EBICS Z53 Debug", f"Calling Z53 with date: {date_str}")
                     data = client.Z53(
-                        start=date_param,                     # should be in YYYY-MM-DD
-                        end=date_param,
+                        start=date_str,                     # should be in YYYY-MM-DD
+                        end=date_str,
                     )
                 else:
                     # For other order types, we might need different methods
                     # This is a placeholder for future extension
                     data = client.Z53(
-                        start=date_param,
-                        end=date_param,
+                        start=date_str,
+                        end=date_str,
                     )
             client.confirm_download()
             
-            frappe.log_error("EBICS Data Debug", f"Data received from EBICS: {len(data)} accounts for date {date_param}")
+            frappe.log_error("EBICS Data Debug", f"Data received from EBICS: {len(data)} accounts for date {date_str}")
             
             # check data
             if len(data) > 0:

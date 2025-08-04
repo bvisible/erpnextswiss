@@ -2,6 +2,38 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('ebics Connection', {
+    // Date validation helper function
+    validate_ebics_date: function(date_value, field_label) {
+        // Check if date is valid
+        if (!date_value) {
+            frappe.throw(__("{0} is required", [field_label]));
+            return false;
+        }
+        
+        // Check date format (should be YYYY-MM-DD)
+        var date_pattern = /^\d{4}-\d{2}-\d{2}$/;
+        if (!date_pattern.test(date_value)) {
+            frappe.throw(__("{0} must be in YYYY-MM-DD format", [field_label]));
+            return false;
+        }
+        
+        // Parse date
+        var date_obj = frappe.datetime.str_to_obj(date_value);
+        var today = frappe.datetime.get_today();
+        var today_obj = frappe.datetime.str_to_obj(today);
+        
+        // Check if date is in the future
+        if (frappe.datetime.get_diff(date_value, today) > 0) {
+            frappe.msgprint({
+                title: __('Warning'),
+                message: __("{0} is in the future. Bank may not have data for future dates.", [field_label]),
+                indicator: 'orange'
+            });
+        }
+        
+        return true;
+    },
+    
     refresh: function(frm) {
         // Auto-detect bank configuration when URL changes
         if (!frm.doc.bank_config && frm.doc.url) {
@@ -81,6 +113,16 @@ frappe.ui.form.on('ebics Connection', {
                                     click: function() {
                                         var values = sync_dialog.get_values();
                                         if (values.from_date && values.to_date) {
+                                            // Validate dates
+                                            frm.events.validate_ebics_date(values.from_date, __('From Date'));
+                                            frm.events.validate_ebics_date(values.to_date, __('To Date'));
+                                            
+                                            // Check date range validity
+                                            if (frappe.datetime.get_diff(values.from_date, values.to_date) > 0) {
+                                                frappe.throw(__("'From Date' must be before or equal to 'To Date'"));
+                                                return;
+                                            }
+                                            
                                             var days = frappe.datetime.get_diff(values.to_date, values.from_date) + 1;
                                             
                                             // Show loading message
@@ -289,6 +331,20 @@ frappe.ui.form.on('ebics Connection', {
                             ],
                             primary_action_label: __('Synchronize'),
                             primary_action: function(values) {
+                                // Validate dates before sync
+                                try {
+                                    frm.events.validate_ebics_date(values.from_date, __('From Date'));
+                                    frm.events.validate_ebics_date(values.to_date, __('To Date'));
+                                    
+                                    // Check date range validity
+                                    if (frappe.datetime.get_diff(values.from_date, values.to_date) > 0) {
+                                        frappe.throw(__("'From Date' must be before or equal to 'To Date'"));
+                                        return;
+                                    }
+                                } catch (e) {
+                                    return; // Stop if validation fails
+                                }
+                                
                                 sync_dialog.hide();
                                 
                                 // Show progress dialog
@@ -344,6 +400,32 @@ frappe.ui.form.on('ebics Connection', {
                         sync_dialog.fields_dict.preview_btn.click();
                         
                     }).addClass("btn-primary");
+                    
+                    // Add intraday statements button for Swiss banks
+                    frm.add_custom_button( __("Get Intraday Statements"), function() {
+                        frappe.call({
+                            'method': 'get_intraday_statements',
+                            'doc': frm.doc,
+                            'callback': function (response) {
+                                if (response.message) {
+                                    if (response.message.success) {
+                                        frappe.msgprint({
+                                            title: __('Intraday Statements Retrieved'),
+                                            message: response.message.message,
+                                            indicator: 'green'
+                                        });
+                                        cur_frm.reload_doc();
+                                    } else {
+                                        frappe.msgprint({
+                                            title: __('Failed to Retrieve Intraday Statements'),
+                                            message: response.message.message || __("Please check the error log."),
+                                            indicator: 'red'
+                                        });
+                                    }
+                                }
+                            }
+                        });
+                    }).addClass("btn-default");
                 }
             }
             

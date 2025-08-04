@@ -17,6 +17,7 @@
   "closing_balance",
   "currency",
   "status",
+  "statement_type",
   "sec_transactions",
   "transactions",
   "sec_content",
@@ -139,6 +140,16 @@
    "label": "Status",
    "options": "Pending\nError\nCompleted",
    "read_only": 1
+  },
+  {
+   "default": "End of Day",
+   "fieldname": "statement_type",
+   "fieldtype": "Select",
+   "in_standard_filter": 1,
+   "label": "Statement Type",
+   "options": "End of Day\nIntraday",
+   "read_only": 1,
+   "description": "End of Day (Z53/camt.053) or Intraday (Z52/camt.052)"
   }
  ],
  "links": [],

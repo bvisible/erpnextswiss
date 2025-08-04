@@ -15,6 +15,7 @@
         "payment_order_type_h004",
         "column_break_h004",
         "statement_order_type_h004",
+        "intraday_order_type_h004",
         "h005_settings_section",
         "payment_service_h005",
         "payment_scope_h005",
@@ -25,6 +26,8 @@
         "statement_msg_name_h005",
         "statement_version_h005",
         "statement_container_h005",
+        "intraday_service_h005",
+        "intraday_msg_name_h005",
         "common_settings_section",
         "use_swiss_namespace",
         "custom_namespace",
@@ -85,6 +88,13 @@
             "label": "Statement Order Type (H004)",
             "description": "e.g., Z53",
             "default": "Z53"
+        },
+        {
+            "fieldname": "intraday_order_type_h004",
+            "fieldtype": "Data",
+            "label": "Intraday Statement Order Type (H004)",
+            "description": "e.g., Z52 for Swiss intraday statements",
+            "default": "Z52"
         },
         {
             "fieldname": "h005_settings_section",
@@ -148,6 +158,19 @@
             "label": "Statement Container (H005)",
             "options": "ZIP\nNONE",
             "default": "ZIP"
+        },
+        {
+            "fieldname": "intraday_service_h005",
+            "fieldtype": "Data",
+            "label": "Intraday Service (H005)",
+            "description": "e.g., STM for statements",
+            "default": "STM"
+        },
+        {
+            "fieldname": "intraday_msg_name_h005",
+            "fieldtype": "Data",
+            "label": "Intraday Message Name (H005)",
+            "default": "camt.052"
         },
         {
             "fieldname": "common_settings_section",

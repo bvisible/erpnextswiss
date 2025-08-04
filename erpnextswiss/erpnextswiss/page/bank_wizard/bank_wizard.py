@@ -1222,4 +1222,191 @@ def make_journal_entry_from_template(template_name, transaction, bank_account, c
         'journal_entry': journal_entry.name,
         'link': get_url_to_form("Journal Entry", journal_entry.name)
     }
+
+
+"""
+Read and parse CAMT.052 (intraday bank statement) file
+This is similar to CAMT.053 but provides real-time intraday information
+
+Input: camt.052-xml-string
+Output: dict with transactions and meta information
+"""
+def read_camt052_intraday(content):
+    soup = BeautifulSoup(content, 'lxml-xml')
+    transactions = []
+    meta = {}
+    
+    try:
+        # Get account information
+        iban_element = soup.find('IBAN') or soup.find('iban')
+        if iban_element:
+            meta['iban'] = iban_element.get_text().strip()
+        else:
+            meta['iban'] = 'n/a'
+            
+        # Get report ID
+        rpt = soup.find('Rpt') or soup.find('rpt')
+        if rpt:
+            rpt_id = rpt.find('Id') or rpt.find('id')
+            if rpt_id:
+                meta['report_id'] = rpt_id.get_text().strip()
+            else:
+                meta['report_id'] = 'n/a'
+                
+            # Get creation date/time
+            cre_dt_tm = rpt.find('CreDtTm') or rpt.find('credttm')
+            if cre_dt_tm:
+                meta['creation_datetime'] = cre_dt_tm.get_text().strip()
+        
+        # Get currency
+        amt_element = soup.find('Amt') or soup.find('amt')
+        if amt_element and amt_element.has_attr('Ccy'):
+            meta['currency'] = amt_element['Ccy']
+        elif amt_element and amt_element.has_attr('ccy'):
+            meta['currency'] = amt_element['ccy']
+        else:
+            meta['currency'] = 'CHF'
+            
+        # Get current balance (intraday)
+        balances = soup.find_all('Bal') or soup.find_all('bal')
+        for balance in balances:
+            try:
+                cd_element = balance.find('Cd') or balance.find('cd')
+                if cd_element:
+                    balance_type = cd_element.get_text().strip()
+                    amt_element = balance.find('Amt') or balance.find('amt')
+                    if amt_element:
+                        amount = float(amt_element.get_text().strip())
+                        
+                        # Check if debit or credit
+                        cdtdbtind_element = balance.find('CdtDbtInd') or balance.find('cdtdbtind')
+                        if cdtdbtind_element:
+                            cdtdbt = cdtdbtind_element.get_text().strip()
+                            if cdtdbt == "DBIT":
+                                amount = -amount
+                                
+                        if balance_type == "ITBD":  # Intraday balance
+                            meta['intraday_balance'] = amount
+                        elif balance_type == "CLAV":  # Available balance
+                            meta['available_balance'] = amount
+            except Exception as e:
+                frappe.log_error("Error parsing CAMT052 balance: {0}".format(str(e)))
+                
+        # Parse transactions (entries)
+        entries = soup.find_all('Ntry') or soup.find_all('ntry')
+        
+        for entry in entries:
+            try:
+                # Get amount
+                amt_element = entry.find('Amt') or entry.find('amt')
+                if amt_element:
+                    amount = float(amt_element.get_text().strip())
+                else:
+                    continue
+                    
+                # Get credit/debit indicator
+                cdtdbtind_element = entry.find('CdtDbtInd') or entry.find('cdtdbtind')
+                if cdtdbtind_element:
+                    credit_debit = cdtdbtind_element.get_text().strip()
+                else:
+                    credit_debit = "DBIT"
+                    
+                # Get booking date
+                booking_date = None
+                dt_element = entry.find('BookgDt') or entry.find('bookgdt')
+                if dt_element:
+                    dt = dt_element.find('Dt') or dt_element.find('dt')
+                    if dt:
+                        booking_date = dt.get_text().strip()
+                        
+                # Get value date
+                value_date = None
+                val_dt_element = entry.find('ValDt') or entry.find('valdt')
+                if val_dt_element:
+                    dt = val_dt_element.find('Dt') or val_dt_element.find('dt')
+                    if dt:
+                        value_date = dt.get_text().strip()
+                        
+                # Use booking date or value date
+                transaction_date = booking_date or value_date or datetime.now().strftime('%Y-%m-%d')
+                
+                # Get transaction details
+                tx_dtls = entry.find_all('TxDtls') or entry.find_all('txdtls')
+                
+                for detail in tx_dtls:
+                    tx_data = {
+                        'date': transaction_date,
+                        'amount': amount,
+                        'credit_debit': credit_debit,
+                        'status': 'Pending'  # Intraday transactions are usually pending
+                    }
+                    
+                    # Get references
+                    refs = detail.find('Refs') or detail.find('refs')
+                    if refs:
+                        acct_svcr_ref = refs.find('AcctSvcrRef') or refs.find('acctsvcrref')
+                        if acct_svcr_ref:
+                            tx_data['unique_reference'] = acct_svcr_ref.get_text().strip()
+                            
+                    # Get party information
+                    rltd_pties = detail.find('RltdPties') or detail.find('rltdpties')
+                    if rltd_pties:
+                        # For credit - get debtor info
+                        if credit_debit == "CRDT":
+                            dbtr = rltd_pties.find('Dbtr') or rltd_pties.find('dbtr')
+                            if dbtr:
+                                nm = dbtr.find('Nm') or dbtr.find('nm')
+                                if nm:
+                                    tx_data['party_name'] = nm.get_text().strip()
+                                    
+                            dbtr_acct = rltd_pties.find('DbtrAcct') or rltd_pties.find('dbtracct')
+                            if dbtr_acct:
+                                iban = dbtr_acct.find('IBAN') or dbtr_acct.find('iban')
+                                if iban:
+                                    tx_data['party_iban'] = iban.get_text().strip()
+                        else:
+                            # For debit - get creditor info
+                            cdtr = rltd_pties.find('Cdtr') or rltd_pties.find('cdtr')
+                            if cdtr:
+                                nm = cdtr.find('Nm') or cdtr.find('nm')
+                                if nm:
+                                    tx_data['party_name'] = nm.get_text().strip()
+                                    
+                            cdtr_acct = rltd_pties.find('CdtrAcct') or rltd_pties.find('cdtracct')
+                            if cdtr_acct:
+                                iban = cdtr_acct.find('IBAN') or cdtr_acct.find('iban')
+                                if iban:
+                                    tx_data['party_iban'] = iban.get_text().strip()
+                                    
+                    # Get remittance information
+                    rmt_inf = detail.find('RmtInf') or detail.find('rmtinf')
+                    if rmt_inf:
+                        # Check for structured reference
+                        strd = rmt_inf.find('Strd') or rmt_inf.find('strd')
+                        if strd:
+                            cdtr_ref_inf = strd.find('CdtrRefInf') or strd.find('cdtrrefinf')
+                            if cdtr_ref_inf:
+                                ref = cdtr_ref_inf.find('Ref') or cdtr_ref_inf.find('ref')
+                                if ref:
+                                    tx_data['transaction_reference'] = ref.get_text().strip()
+                        else:
+                            # Check for unstructured reference
+                            ustrd = rmt_inf.find('Ustrd') or rmt_inf.find('ustrd')
+                            if ustrd:
+                                tx_data['transaction_reference'] = ustrd.get_text().strip()
+                                
+                    transactions.append(tx_data)
+                    
+            except Exception as e:
+                frappe.log_error("Error parsing CAMT052 entry: {0}".format(str(e)), "CAMT052 Parser")
+                continue
+                
+    except Exception as e:
+        frappe.log_error("Error parsing CAMT052: {0}".format(str(e)), "CAMT052 Parser")
+        return None
+        
+    return {
+        'meta': meta,
+        'transactions': transactions
+    }
     

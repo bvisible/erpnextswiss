@@ -10,6 +10,7 @@
 import frappe
 from frappe.utils import add_days
 from datetime import datetime, date
+from erpnextswiss.erpnextswiss.ebics_utils import prepare_ebics_date, prepare_date_range, translate_ebics_error, log_ebics_request
 
 def sync(debug=False):
     if debug:
@@ -254,34 +255,11 @@ def sync_date_range(connection_name, from_date, to_date):
         
         conn = frappe.get_doc("ebics Connection", connection_name)
         
-        # Convert dates if needed
-        if isinstance(from_date, str):
-            # Try different date formats
-            for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y"]:
-                try:
-                    from_date = datetime.strptime(from_date, fmt).date()
-                    break
-                except ValueError:
-                    continue
-            else:
-                frappe.throw(f"Invalid from_date format: {from_date}")
-                
-        if isinstance(to_date, str):
-            # Try different date formats
-            for fmt in ["%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y"]:
-                try:
-                    to_date = datetime.strptime(to_date, fmt).date()
-                    break
-                except ValueError:
-                    continue
-            else:
-                frappe.throw(f"Invalid to_date format: {to_date}")
+        # Convert dates using utility function
+        from_date_str, to_date_str, from_date_obj, to_date_obj = prepare_date_range(from_date, to_date)
         
         # Calculate days to sync
-        days_to_sync = (to_date - from_date).days + 1
-        
-        if days_to_sync <= 0:
-            frappe.throw("Invalid date range: 'To Date' must be after or equal to 'From Date'")
+        days_to_sync = (to_date_obj - from_date_obj).days + 1
         
         # Get initial counts
         initial_count = frappe.db.count("ebics Statement", {'ebics_connection': connection_name})
@@ -289,18 +267,18 @@ def sync_date_range(connection_name, from_date, to_date):
         completed_count = frappe.db.count("ebics Statement", {'ebics_connection': connection_name, 'status': 'Completed'})
         
         # Perform sync
-        date = from_date
+        date = from_date_obj
         statements_created = 0
         errors = []
         days_processed = 0
         
         # Check if we should force daily sync
         if hasattr(frappe.flags, 'force_daily_sync') and frappe.flags.force_daily_sync:
-            date = from_date
+            date = from_date_obj
         else:
             try:
                 # Call get_transactions_range which should handle the full range
-                conn.get_transactions_range(from_date, to_date)
+                conn.get_transactions_range(from_date_str, to_date_str)
                 days_processed = days_to_sync
                 
                 # Count statements created in the range
@@ -389,16 +367,8 @@ def preview_sync_range_detailed(connection_name, from_date, to_date, debug=False
         
         conn = frappe.get_doc("ebics Connection", connection_name)
         
-        # Convert dates if needed
-        if isinstance(from_date, str):
-            from_date_obj = datetime.strptime(from_date, "%Y-%m-%d").date()
-        else:
-            from_date_obj = from_date
-            
-        if isinstance(to_date, str):
-            to_date_obj = datetime.strptime(to_date, "%Y-%m-%d").date()
-        else:
-            to_date_obj = to_date
+        # Convert dates using utility function
+        from_date_str, to_date_str, from_date_obj, to_date_obj = prepare_date_range(from_date, to_date)
         
         # Get existing statements in the date range
         existing_statements = frappe.db.sql("""
@@ -432,9 +402,9 @@ def preview_sync_range_detailed(connection_name, from_date, to_date, debug=False
                     version=bank_config.statement_version_h005 or '04',
                     container=bank_config.statement_container_h005 or 'ZIP'
                 )
-                data = client.BTD(Z53_format, start_date=from_date, end_date=to_date)
+                data = client.BTD(Z53_format, start_date=from_date_str, end_date=to_date_str)
             else:
-                data = client.Z53(start=from_date, end=to_date)
+                data = client.Z53(start=from_date_str, end=to_date_str)
                 
             client.confirm_download()
             
@@ -574,9 +544,9 @@ def diagnose_ebics_availability(connection_name, test_months=3):
                         version=bank_config.statement_version_h005 or '04',
                         container=bank_config.statement_container_h005 or 'ZIP'
                     )
-                    data = client.BTD(Z53_format, start_date=test_date, end_date=test_date)
+                    data = client.BTD(Z53_format, start_date=prepare_ebics_date(test_date), end_date=prepare_ebics_date(test_date))
                 else:
-                    data = client.Z53(start=test_date, end=test_date)
+                    data = client.Z53(start=prepare_ebics_date(test_date), end=prepare_ebics_date(test_date))
                     
                 client.confirm_download()
                 
@@ -623,9 +593,9 @@ def diagnose_ebics_availability(connection_name, test_months=3):
                         version=bank_config.statement_version_h005 or '04',
                         container=bank_config.statement_container_h005 or 'ZIP'
                     )
-                    data = client.BTD(Z53_format, start_date=test_date, end_date=test_date)
+                    data = client.BTD(Z53_format, start_date=prepare_ebics_date(test_date), end_date=prepare_ebics_date(test_date))
                 else:
-                    data = client.Z53(start=test_date, end=test_date)
+                    data = client.Z53(start=prepare_ebics_date(test_date), end=prepare_ebics_date(test_date))
                     
                 client.confirm_download()
                 
@@ -669,9 +639,9 @@ def diagnose_ebics_availability(connection_name, test_months=3):
                     version=bank_config.statement_version_h005 or '04',
                     container=bank_config.statement_container_h005 or 'ZIP'
                 )
-                data = client.BTD(Z53_format, start_date=july_2025, end_date=july_2025)
+                data = client.BTD(Z53_format, start_date=prepare_ebics_date(july_2025), end_date=prepare_ebics_date(july_2025))
             else:
-                data = client.Z53(start=july_2025, end=july_2025)
+                data = client.Z53(start=prepare_ebics_date(july_2025), end=prepare_ebics_date(july_2025))
                 
             client.confirm_download()
             
