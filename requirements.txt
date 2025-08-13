@@ -4,8 +4,12 @@ factur-x>=2.3
 unidecode
 opencv-python
 pymupdf
-fintech>=7.8.3
+# fintech>=7.8.3  # REMOVED: Replaced by node-ebics-client (MIT License)
+# Note: EBICS functionality now uses node-ebics-client via Node.js
+# Install with: npm install ebics-client
 pysftp
 icalendar
 unidecode
 lxml
+requests  # Required for various integrations
+cryptography  # Required for encryption and key management

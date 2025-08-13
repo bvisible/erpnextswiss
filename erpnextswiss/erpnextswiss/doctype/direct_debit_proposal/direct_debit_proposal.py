@@ -12,7 +12,7 @@ from frappe import _
 from frappe.utils.data import get_url_to_form
 from frappe.utils import cint
 from unidecode import unidecode
-from erpnextswiss.erpnextswiss.xml import validate_xml_against_xsd
+from erpnextswiss.erpnextswiss.xml_utils import validate_xml_against_xsd
 import os
 
 XML_SCHEMA_FILES = {

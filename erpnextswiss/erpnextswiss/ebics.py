@@ -6,6 +6,7 @@
 #  $ bench execute erpnextswiss.erpnextswiss.ebics.sync --kwargs "{'debug': True}"
 #  $ bench execute erpnextswiss.erpnextswiss.ebics.sync_connection --kwargs "{'connection': 'MyBank', 'debug': True}"
 #
+# MIGRATION COMPLETE: Using ebics-api-client instead of fintech
 
 import frappe
 from frappe.utils import add_days
@@ -394,7 +395,7 @@ def preview_sync_range_detailed(connection_name, from_date, to_date, debug=False
 
             # Make the EBICS call
             if conn.ebics_version == "H005":
-                from fintech.ebics import BusinessTransactionFormat
+                from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
                 Z53_format = BusinessTransactionFormat(
                     service=bank_config.statement_service_h005 or 'EOP',
                     msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
@@ -536,7 +537,7 @@ def diagnose_ebics_availability(connection_name, test_months=3):
             test_date = add_days(today, -30 * months_ago)
             try:
                 if conn.ebics_version == "H005":
-                    from fintech.ebics import BusinessTransactionFormat
+                    from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
                     Z53_format = BusinessTransactionFormat(
                         service=bank_config.statement_service_h005 or 'EOP',
                         msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
@@ -566,7 +567,7 @@ def diagnose_ebics_availability(connection_name, test_months=3):
                         'status': 'no_data',
                         'count': 0
                     })
-            except fintech.ebics.EbicsFunctionalError as err:
+            except erpnextswiss.erpnextswiss.ebics_api.EbicsFunctionalError as err:
                 if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in str(err):
                     results['test_results'].append({
                         'date': test_date.strftime("%Y-%m-%d"),
@@ -585,7 +586,7 @@ def diagnose_ebics_availability(connection_name, test_months=3):
             test_date = add_days(today, 30 * months_ahead)
             try:
                 if conn.ebics_version == "H005":
-                    from fintech.ebics import BusinessTransactionFormat
+                    from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
                     Z53_format = BusinessTransactionFormat(
                         service=bank_config.statement_service_h005 or 'EOP',
                         msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
@@ -613,7 +614,7 @@ def diagnose_ebics_availability(connection_name, test_months=3):
                         'status': 'no_data',
                         'count': 0
                     })
-            except fintech.ebics.EbicsFunctionalError as err:
+            except erpnextswiss.erpnextswiss.ebics_api.EbicsFunctionalError as err:
                 if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in str(err):
                     results['test_results'].append({
                         'date': test_date.strftime("%Y-%m-%d"),
@@ -631,7 +632,7 @@ def diagnose_ebics_availability(connection_name, test_months=3):
         july_2025 = datetime(2025, 7, 15).date()
         try:
             if conn.ebics_version == "H005":
-                from fintech.ebics import BusinessTransactionFormat
+                from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
                 Z53_format = BusinessTransactionFormat(
                     service=bank_config.statement_service_h005 or 'EOP',
                     msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
@@ -667,8 +668,7 @@ def diagnose_ebics_availability(connection_name, test_months=3):
 def get_all_available_statements(connection_name, debug=False):
     """Get all available statements from EBICS without date restrictions"""
     try:
-        import fintech.ebics
-        from fintech.ebics import BusinessTransactionFormat
+        from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
         
         if not frappe.db.exists("ebics Connection", connection_name):
             frappe.throw("Connection not found: {0}".format(connection_name))
@@ -680,7 +680,7 @@ def get_all_available_statements(connection_name, debug=False):
         # Make EBICS call without specific dates - this gets all available
         try:
             if conn.ebics_version == "H005":
-                from fintech.ebics import BusinessTransactionFormat
+                from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
                 Z53_format = BusinessTransactionFormat(
                     service=bank_config.statement_service_h005 or 'EOP',
                     msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
@@ -755,7 +755,7 @@ def get_all_available_statements(connection_name, debug=False):
                 'dates_summary': dates_list
             }
             
-        except fintech.ebics.EbicsFunctionalError as err:
+        except erpnextswiss.erpnextswiss.ebics_api.EbicsFunctionalError as err:
             error_msg = str(err)
             if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in error_msg:
                 return {
@@ -785,7 +785,7 @@ def import_all_available(connection_name, debug=False):
 
         # Get all available data
         if conn.ebics_version == "H005":
-            from fintech.ebics import BusinessTransactionFormat
+            from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
             Z53_format = BusinessTransactionFormat(
                 service=bank_config.statement_service_h005 or 'EOP',
                 msg_name=bank_config.statement_msg_name_h005 or 'camt.053',

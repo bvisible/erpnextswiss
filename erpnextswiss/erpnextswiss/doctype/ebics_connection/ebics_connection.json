@@ -21,6 +21,7 @@
   "col_sync",
   "enable_sync",
   "sec_states",
+  "keys_created",
   "ini_sent",
   "hia_sent",
   "ini_letter_created",
@@ -72,6 +73,12 @@
    "fieldname": "sec_states",
    "fieldtype": "Section Break",
    "hidden": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "keys_created",
+   "fieldtype": "Check",
+   "label": "Keys created"
   },
   {
    "default": "0",

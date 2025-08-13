@@ -9,7 +9,7 @@ from frappe import _
 from datetime import datetime, timedelta
 import time
 from erpnextswiss.erpnextswiss.common_functions import get_building_number, get_street_name, get_pincode, get_city, get_primary_address, split_address_to_street_and_building
-from erpnextswiss.erpnextswiss.xml import validate_xml_against_xsd
+from erpnextswiss.erpnextswiss.xml_utils import validate_xml_against_xsd
 import html          # used to escape xml content
 from frappe.utils import cint, get_url_to_form, rounded
 from unidecode import unidecode     # used to remove German/French-type special characters from bank identifieres
@@ -578,16 +578,9 @@ class PaymentProposal(Document):
     @frappe.whitelist()
     def attach_generated_file(self, file_content, file_name, file_type):
         """Attach a generated file to this Payment Proposal"""
-        import base64
         from frappe.utils.file_manager import save_file
         
-        # Convert content to base64 if it's not already
-        if not file_content.startswith('data:'):
-            # Encode the content
-            encoded_content = base64.b64encode(file_content.encode()).decode()
-            file_content = f"data:application/xml;base64,{encoded_content}"
-        
-        # Save the file
+        # Save the file directly without encoding (content is already XML text)
         file_doc = save_file(
             fname=file_name,
             content=file_content,
@@ -603,140 +596,6 @@ class PaymentProposal(Document):
             frappe.db.set_value(self.doctype, self.name, 'bank_ebics_file_generated', 1)
         
         return file_doc.name
-    
-    @frappe.whitelist()
-    def generate_payment_file_from_proposal(self):
-        """Generate payment file (pain.001) from Payment Proposal payments"""
-        import time
-        import html
-        from erpnextswiss.erpnextswiss.page.payment_export.payment_export import make_line
-        
-        data = {}
-        settings = frappe.get_doc("ERPNextSwiss Settings", "ERPNextSwiss Settings")
-        data['xml_version'] = settings.get("xml_version")
-        data['xml_region'] = settings.get("banking_region")
-        data['msgid'] = "MSG-" + time.strftime("%Y%m%d%H%M%S")
-        data['date'] = time.strftime("%Y-%m-%dT%H:%M:%S")
-        
-        # Company information
-        data['company'] = {
-            'name': html.escape(self.company)
-        }
-        company_address = get_primary_address(target_name=self.company, target_type="Company")
-        if company_address:
-            data['company']['address_line1'] = html.escape(company_address.address_line1[:35])
-            data['company']['address_line2'] = "{0} {1}".format(html.escape(company_address.pincode), html.escape(company_address.city))[:35]
-            data['company']['country_code'] = frappe.get_value("Country", company_address.country, "code").upper()
-            data['company']['pincode'] = html.escape(company_address.pincode[:16])
-            data['company']['city'] = html.escape(company_address.city[:35])
-            data['company']['street'] = html.escape(get_street_name(company_address.address_line1)[:35])
-            data['company']['building'] = html.escape(get_building_number(company_address.address_line1)[:5])
-        
-        # Bank account information (part of company in this template)
-        account = frappe.get_doc("Account", self.pay_from_account)
-        data['company']['iban'] = (account.iban or "").replace(" ", "")
-        data['company']['bic'] = account.bic or ""
-        
-        # Process payments
-        payments_data = []
-        control_sum = 0.0
-        
-        transaction_count = 0
-        for payment in self.payments:
-            # Get country code
-            country_code = frappe.get_value("Country", payment.receiver_country, "code")
-            if country_code:
-                country_code = country_code.upper()
-            else:
-                country_code = "CH"  # Default to Switzerland
-            
-            # Build payment reference (end_to_end_id)
-            reference = (payment.reference or '')[:35]
-            if len(payment.reference or '') > 35:
-                reference = reference[:33] + ".."
-                
-            payment_dict = {
-                'id': "PMTINF-{0}-{1}".format(self.name, transaction_count),
-                'method': 'TRF',
-                'batch': 'true',
-                'required_execution_date': payment.execution_date if payment.execution_date else self.date,
-                'debtor': {
-                    'name': self.company,
-                    'account': data['company']['iban'],
-                    'bic': data['company']['bic']
-                },
-                'instruction_id': "INSTRID-{0}-{1}".format(self.name, transaction_count),
-                'end_to_end_id': html.escape(reference),
-                'currency': payment.currency,
-                'amount': rounded(payment.amount, 2),
-                'creditor': {
-                    'name': html.escape(payment.receiver),
-                    'address_line1': html.escape((payment.receiver_address_line1 or '')[:35]),
-                    'address_line2': html.escape((payment.receiver_address_line2 or '')[:35]),
-                    'street': html.escape(get_street_name(payment.receiver_address_line1 or '')[:35]),
-                    'building': html.escape(get_building_number(payment.receiver_address_line1 or '')[:5]),
-                    'country_code': country_code,
-                    'pincode': html.escape((payment.receiver_pincode or '')[:16]),
-                    'city': html.escape((payment.receiver_city or '')[:35])
-                },
-                'is_salary': payment.is_salary
-            }
-            
-            # Handle payment type specific fields
-            if payment.payment_type == "SEPA":
-                payment_dict['service_level'] = "SEPA"
-                payment_dict['iban'] = (payment.iban or '').replace(" ", "")
-                payment_dict['reference'] = html.escape(payment.reference or '')
-            elif payment.payment_type == "QRR":
-                payment_dict['service_level'] = "QRR"
-                payment_dict['esr_participation_number'] = (payment.esr_participation_number or '').replace(" ", "")
-                payment_dict['esr_reference'] = payment.esr_reference or ''
-            elif payment.payment_type == "SCOR":
-                payment_dict['service_level'] = "SCOR"
-                payment_dict['iban'] = (payment.iban or '').replace(" ", "")
-                payment_dict['reference'] = payment.esr_reference or ''
-            elif payment.payment_type == "ESR":
-                # Check if it's actually a QRR masquerading as ESR
-                if payment.esr_participation_number and 'CH' in payment.esr_participation_number:
-                    payment_dict['service_level'] = "QRR"
-                    payment_dict['esr_participation_number'] = payment.esr_participation_number
-                    payment_dict['esr_reference'] = payment.esr_reference or ''
-                else:
-                    payment_dict['local_instrument'] = "CH01"
-                    payment_dict['service_level'] = "ESR"
-                    payment_dict['esr_participation_number'] = payment.esr_participation_number or ''
-                    payment_dict['esr_reference'] = payment.esr_reference or ''
-            else:  # IBAN
-                payment_dict['service_level'] = "IBAN"
-                payment_dict['iban'] = (payment.iban or '').replace(" ", "")
-                payment_dict['reference'] = html.escape(payment.reference or '')
-                if payment.bic:
-                    payment_dict['bic'] = payment.bic
-            
-            transaction_count += 1
-            payments_data.append(payment_dict)
-            control_sum += payment.amount
-        
-        data['transaction_count'] = len(payments_data)
-        data['control_sum'] = rounded(control_sum, 2)
-        data['payments'] = payments_data
-        
-        # Render the pain.001 template based on XML version and settings
-        single_payment = cint(self.get("single_payment"))
-        if data['xml_version'] == "09" and not single_payment:
-            content = frappe.render_template('erpnextswiss/erpnextswiss/doctype/payment_proposal/pain-001-001-09.html', data)
-        elif data['xml_version'] == "09" and single_payment:
-            content = frappe.render_template('erpnextswiss/erpnextswiss/doctype/payment_proposal/pain-001-001-09_single_payment.html', data)
-        elif single_payment:
-            content = frappe.render_template('erpnextswiss/erpnextswiss/doctype/payment_proposal/pain-001_single_payment.html', data)
-        else:
-            content = frappe.render_template('erpnextswiss/erpnextswiss/doctype/payment_proposal/pain-001.html', data)
-        
-        # Apply unidecode if enabled
-        if cint(settings.get("use_unidecode")) == 1:
-            content = unidecode(content)
-        
-        return {'content': content}
     
     @frappe.whitelist()
     def create_payment_entries_from_proposal(self):

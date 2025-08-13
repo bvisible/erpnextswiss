@@ -1,0 +1,29 @@
+{
+  "content": null,
+  "creation": "2025-01-13 10:00:00.000000",
+  "docstatus": 0,
+  "doctype": "Page",
+  "idx": 0,
+  "modified": "2025-01-13 10:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "ERPNextSwiss",
+  "name": "ebics-activation-wizard",
+  "owner": "Administrator",
+  "page_name": "EBICS Activation Wizard",
+  "roles": [
+    {
+      "role": "System Manager"
+    },
+    {
+      "role": "Accounts Manager"
+    },
+    {
+      "role": "Accounts User"
+    }
+  ],
+  "script": null,
+  "standard": "Yes",
+  "style": null,
+  "system_page": 0,
+  "title": "EBICS Activation Wizard"
+}

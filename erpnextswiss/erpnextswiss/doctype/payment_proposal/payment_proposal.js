@@ -6,35 +6,8 @@ frappe.ui.form.on('Payment Proposal', {
         if (frm.doc.docstatus == 1) {
             // add download pain.001 button on submitted record
             frm.add_custom_button(__("Download bank file"), function() {
-                // Show dialog with two options
-                frappe.prompt([
-                    {
-                        fieldname: 'file_type',
-                        label: __('Select File Type'),
-                        fieldtype: 'Select',
-                        options: ['Download bank import file (CAMT)', 'Download bank import file (EBICS)'],
-                        reqd: 1,
-                        default: 'Download bank import file (CAMT)'
-                    }
-                ], function(values) {
-                    if (values.file_type === 'Download bank import file (EBICS)') {
-                        // Current behavior for EBICS
-                        generate_bank_file(frm);
-                        // Update checkbox
-                        if (!frm.doc.bank_ebics_file_generated) {
-                            frm.set_value('bank_ebics_file_generated', 1);
-                            frm.save();
-                        }
-                    } else {
-                        // New behavior with payment_export workflow
-                        show_payment_file_dialog(frm);
-                        // Update checkbox
-                        if (!frm.doc.bank_camt_file_generated) {
-                            frm.set_value('bank_camt_file_generated', 1);
-                            frm.save();
-                        }
-                    }
-                }, __('Select Download Type'), __('Continue'));
+                // Directly show the payment file dialog using create_bank_file
+                show_payment_file_dialog(frm);
             }).addClass("btn-primary");
             frm.add_custom_button(__("Download Wise file"), function() {
                 generate_wise_file(frm);
@@ -200,9 +173,9 @@ function recalculate_total(frm) {
 }
 
 function show_payment_file_dialog(frm) {
-    // Generate payment file first
+    // Generate payment file using create_bank_file
     frappe.call({
-        'method': 'generate_payment_file_from_proposal',
+        'method': 'create_bank_file',
         'doc': frm.doc,
         'callback': function(r) {
             if (r.message && r.message.content) {
@@ -248,13 +221,13 @@ function show_payment_file_dialog(frm) {
                     d.$wrapper.find('#download-status').show();
                     d.$wrapper.find('#validation-section').show();
                     
-                    // Attach the CAMT file to the document
+                    // Attach the file to the document
                     frappe.call({
                         'method': 'attach_generated_file',
                         'doc': frm.doc,
                         'args': {
                             'file_content': r.message.content,
-                            'file_name': 'payment_camt_' + frm.doc.name + '.xml',
+                            'file_name': 'payment_' + frm.doc.name + '.xml',
                             'file_type': 'CAMT'
                         },
                         'callback': function(attach_r) {
@@ -263,6 +236,11 @@ function show_payment_file_dialog(frm) {
                                     message: __('File attached successfully'),
                                     indicator: 'green'
                                 });
+                                // Update checkbox
+                                if (!frm.doc.bank_camt_file_generated) {
+                                    frm.set_value('bank_camt_file_generated', 1);
+                                    frm.save();
+                                }
                                 frm.reload_doc();
                             }
                         }
@@ -376,7 +354,7 @@ function do_transmit_ebics(frm) {
             'ebics_connection': frm.ebics_connection,
             'payment_proposal': frm.doc.name
         },
-        'callback': function (response) {
+        'callback': function () {
             frappe.msgprint( __("Payments transferred using ebics") );
             // Update checkbox
             if (!frm.doc.file_sent_to_ebics) {

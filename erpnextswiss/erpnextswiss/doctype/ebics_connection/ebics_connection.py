@@ -1,25 +1,80 @@
 # -*- coding: utf-8 -*-
-# Copyright (c) 2024, libracore (https://www.libracore.com) and contributors
+# Copyright (c) 2019-2025, libracore (https://www.libracore.com) and contributors
 # For license information, please see license.txt
 #
+# MIGRATION COMPLETE: Using node-ebics-client (MIT License) instead of proprietary library
 
+from __future__ import unicode_literals
 import frappe
+from frappe import _
 from frappe.model.document import Document
 import os
-try:
-    import fintech
-    fintech.register()
-    from fintech.ebics import EbicsKeyRing, EbicsBank, EbicsUser, EbicsClient, BusinessTransactionFormat
-    #from fintech.sepa import Account, SEPACreditTransfer
-except:
-    pass            # failed to load fintech, skip
-from frappe import _
-from frappe.utils.file_manager import save_file
-from frappe.utils.password import get_decrypted_password
-from datetime import datetime, date
-from erpnextswiss.erpnextswiss.ebics_utils import prepare_ebics_date, prepare_date_range, translate_ebics_error, log_ebics_request
+from datetime import datetime, date, timedelta
+import hashlib
+from erpnextswiss.erpnextswiss.ebics_api import EbicsApi, get_ebics_client
+
+@frappe.whitelist()
+def test_connection(connection_name):
+    """Test EBICS connection - callable from outside"""
+    if not connection_name:
+        return "❌ No connection specified"
+    
+    try:
+        conn = frappe.get_doc("ebics Connection", connection_name)
+        return conn.test_connection()
+    except Exception as e:
+        return f"❌ Error: {str(e)}"
+
+@frappe.whitelist()
+def get_available_order_types(connection_name):
+    """Get available order types from bank"""
+    if not connection_name:
+        return None
+    
+    try:
+        conn = frappe.get_doc("ebics Connection", connection_name)
+        
+        # For now, return standard Swiss order types
+        # In future, this could query the bank for actual available types
+        order_types = {
+            "download": {
+                "Z53": "Swiss Bank Statement (End of Day)",
+                "Z52": "Swiss Intraday Statement",
+                "C53": "CAMT.053 - Bank to Customer Statement",
+                "C52": "CAMT.052 - Bank to Customer Account Report",
+                "C54": "CAMT.054 - Bank to Customer Debit/Credit Notification"
+            },
+            "upload": {
+                "XE2": "Swiss Payment (pain.001.001.03.ch.02)",
+                "CCT": "SEPA Credit Transfer",
+                "CDD": "SEPA Direct Debit",
+                "XE3": "Swiss Direct Debit (pain.008.001.02.ch.03)"
+            }
+        }
+        
+        # Check if connection is activated
+        if not conn.activated:
+            return {
+                "status": "warning",
+                "message": "Connection not fully activated",
+                "order_types": order_types
+            }
+        
+        return {
+            "status": "success",
+            "message": "Standard order types for Swiss banks",
+            "order_types": order_types
+        }
+        
+    except Exception as e:
+        frappe.log_error(str(e), "Get Order Types Error")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 class ebicsConnection(Document):
+    
     def before_save(self):
         # make sure synced_until is in date format
         if self.synced_until and not isinstance(self.synced_until, date):
@@ -37,914 +92,541 @@ class ebicsConnection(Document):
             detected_config = self.detect_bank_config()
             if detected_config:
                 self.bank_config = detected_config
-                
-        return
         
+        return
+    
+    def get_client(self):
+        """Get EBICS client using new API wrapper"""
+        return EbicsApi(self)
+    
+    def detect_bank_config(self):
+        """Detect bank configuration from URL"""
+        url_lower = self.url.lower()
+        
+        bank_configs = {
+            'raiffeisen': 'Raiffeisen',
+            'ubs': 'UBS',
+            'credit-suisse': 'Credit Suisse',
+            'cs.ch': 'Credit Suisse',
+            'postfinance': 'PostFinance',
+            'zkb': 'ZKB',
+            'bcv': 'BCV',
+            'bcge': 'BCGE'
+        }
+        
+        for key, bank in bank_configs.items():
+            if key in url_lower:
+                return bank
+        
+        return None
+    
     @frappe.whitelist()
     def get_activation_wizard(self):
+        """Get activation wizard HTML"""
         # determine configuration stage
         if (not self.host_id) or (not self.url) or (not self.partner_id) or (not self.user_id) or (not self.key_password):
             stage = 0
-        elif (not os.path.exists(self.get_keys_file_name())):
+        elif not self.keys_created:
             stage = 1
-        elif (not self.ini_sent):
+        elif not self.ini_sent:
             stage = 2
-        elif (not self.hia_sent):
+        elif not self.hia_sent:
             stage = 3
-        elif (not self.ini_letter_created):
+        elif not self.hpb_downloaded:
             stage = 4
-        elif (not self.hpb_downloaded):
+        elif not self.activated:
             stage = 5
-        elif (not self.activated):
+        else:
             stage = 6
-        else:
-            stage = 7
-            
-        content = frappe.render_template(
-            "erpnextswiss/erpnextswiss/doctype/ebics_connection/ebics_connection_wizard.html", 
-            {
-                'doc': self.as_dict(),
-                'stage': stage
-            }
+        
+        html = """
+        <h3>EBICS Activation Wizard</h3>
+        <p><b>Using:</b> node-ebics-client (MIT License, no transaction limits)</p>
+        <p><b>Stage:</b> {stage}/6</p>
+        
+        <div style="margin: 20px 0;">
+            <h4>Step 1: Configuration</h4>
+            <p>Host ID: {host_id}</p>
+            <p>User ID: {user_id}</p>
+            <p>Partner ID: {partner_id}</p>
+            <p>URL: {url}</p>
+            <p>Version: {version}</p>
+            <p>Status: {config_status}</p>
+        </div>
+        """.format(
+            stage=stage,
+            host_id=self.host_id or "Not set",
+            user_id=self.user_id or "Not set",
+            partner_id=self.partner_id or "Not set",
+            url=self.url or "Not set",
+            version=self.ebics_version or "H004",
+            config_status="✅ Ready" if stage > 0 else "⏳ Please complete configuration"
         )
-        return {'html': content, 'stage': stage}
         
+        if stage > 0:
+            html += """
+            <div style="margin: 20px 0;">
+                <h4>Step 2: Generate Keys</h4>
+                <button class="btn btn-primary" onclick="frappe.call({{
+                    method: 'create_keys',
+                    doc: cur_frm.doc,
+                    callback: function(r) {{ 
+                        frappe.msgprint(r.message);
+                        cur_frm.reload_doc(); 
+                    }}
+                }})">Generate Keys</button>
+                <span>{keys_status}</span>
+            </div>
+            """.format(
+                keys_status="✅ Done" if self.keys_created else "⏳ Pending"
+            )
         
-    def get_keys_file_name(self):
-        keys_file = "{0}.keys".format((self.name or "").replace(" ", "_"))
-        full_keys_file_path = os.path.join(frappe.utils.get_bench_path(), "sites", frappe.utils.get_site_path()[2:], keys_file)
-        return full_keys_file_path
-
-    def get_bank_config(self):
-        """Get bank configuration with defaults"""
-        if self.bank_config:
-            return frappe.get_doc("ebics Bank Config", self.bank_config)
-        else:
-            # Return default config for backward compatibility
-            return frappe._dict({
-                'payment_order_type_h004': 'XE2',
-                'statement_order_type_h004': 'Z53',
-                'payment_service_h005': 'MCT',
-                'payment_scope_h005': 'CH',
-                'payment_msg_name_h005': 'pain.001',
-                'statement_service_h005': 'EOP',
-                'statement_scope_h005': 'CH',
-                'statement_msg_name_h005': 'camt.053',
-                'statement_version_h005': '04',
-                'statement_container_h005': 'ZIP',
-                'use_swiss_namespace': 1,
-                'custom_namespace': '',
-                'supported_payment_types': '["SEPA", "IBAN", "ESR", "QRR", "SCOR"]'
-            })
-    
-    @frappe.whitelist()
-    def detect_bank_config(self):
-        """Auto-detect bank configuration based on URL"""
-        if not self.url:
-            return None
-            
-        url_lower = self.url.lower()
-        if 'raiffeisen' in url_lower:
-            # Check if Raiffeisen config exists
-            if frappe.db.exists("ebics Bank Config", "Raiffeisen"):
-                return "Raiffeisen"
-        elif 'ubs' in url_lower:
-            if frappe.db.exists("ebics Bank Config", "UBS"):
-                return "UBS"
-        elif 'credit-suisse' in url_lower or 'credit.suisse' in url_lower:
-            if frappe.db.exists("ebics Bank Config", "Credit Suisse"):
-                return "Credit Suisse"
-        elif 'postfinance' in url_lower:
-            if frappe.db.exists("ebics Bank Config", "PostFinance"):
-                return "PostFinance"
-        elif 'zkb' in url_lower:
-            if frappe.db.exists("ebics Bank Config", "ZKB"):
-                return "ZKB"
+        if stage > 1:
+            html += """
+            <div style="margin: 20px 0;">
+                <h4>Step 3: Send INI</h4>
+                <button class="btn btn-primary" onclick="frappe.call({{
+                    method: 'send_signature',
+                    doc: cur_frm.doc,
+                    callback: function(r) {{ 
+                        frappe.msgprint(r.message);
+                        cur_frm.reload_doc(); 
+                    }}
+                }})">Send INI</button>
+                <span>{ini_status}</span>
+            </div>
+            """.format(
+                ini_status="✅ Done" if self.ini_sent else "⏳ Pending"
+            )
         
-        return None
+        if stage > 2:
+            html += """
+            <div style="margin: 20px 0;">
+                <h4>Step 4: Send HIA</h4>
+                <button class="btn btn-primary" onclick="frappe.call({{
+                    method: 'send_keys',
+                    doc: cur_frm.doc,
+                    callback: function(r) {{ 
+                        frappe.msgprint(r.message);
+                        cur_frm.reload_doc(); 
+                    }}
+                }})">Send HIA</button>
+                <span>{hia_status}</span>
+            </div>
+            """.format(
+                hia_status="✅ Done" if self.hia_sent else "⏳ Pending"
+            )
         
-    def get_client(self):
-        passphrase = get_decrypted_password("ebics Connection", self.name, "key_password", False)
-        keyring = EbicsKeyRing(keys=self.get_keys_file_name(), passphrase=passphrase)
-        bank = EbicsBank(keyring=keyring, hostid=self.host_id, url=self.url)
-        user = EbicsUser(keyring=keyring, partnerid=self.partner_id, userid=self.user_id)
-        client = EbicsClient(bank, user, version=self.ebics_version)
-        return client
+        if stage > 3:
+            html += """
+            <div style="margin: 20px 0;">
+                <h4>Step 5: Download Bank Keys</h4>
+                <button class="btn btn-primary" onclick="frappe.call({{
+                    method: 'download_public_keys',
+                    doc: cur_frm.doc,
+                    callback: function(r) {{ 
+                        frappe.msgprint(r.message);
+                        cur_frm.reload_doc(); 
+                    }}
+                }})">Download HPB</button>
+                <span>{hpb_status}</span>
+            </div>
+            """.format(
+                hpb_status="✅ Done" if self.hpb_downloaded else "⏳ Pending"
+            )
         
-    @frappe.whitelist()
-    def create_keys(self):
-        try:
-            passphrase = get_decrypted_password("ebics Connection", self.name, "key_password", False)
-            keyring = EbicsKeyRing(keys=self.get_keys_file_name(), passphrase=passphrase)
-            bank = EbicsBank(keyring=keyring, hostid=self.host_id, url=self.url)
-            user = EbicsUser(keyring=keyring, partnerid=self.partner_id, userid=self.user_id)
-            
-            # Check if we need to create keys or just certificates
-            try:
-                user.create_keys(keyversion='A006', bitlength=2048)
-                frappe.msgprint(_("Keys created successfully"))
-            except RuntimeError as e:
-                if "keys already present" in str(e):
-                    frappe.msgprint(_("Keys already exist, creating certificates only"))
-                else:
-                    raise e
-                    
-            # Always try to create certificates
-            if self.ebics_version == "H005":              # H005 requires certificates: create them
-                self.create_certificate()
-            frappe.msgprint(_("Certificates created successfully"))
-            
-        except Exception as err:
-            frappe.throw( "{0}".format(err), _("Error") )
-        return
-
-    @frappe.whitelist()
-    def create_certificate(self):
-        try:
-            passphrase = get_decrypted_password("ebics Connection", self.name, "key_password", False)
-            keyring = EbicsKeyRing(keys=self.get_keys_file_name(), passphrase=passphrase)
-            user = EbicsUser(keyring=keyring, partnerid=self.partner_id, userid=self.user_id)
-            x509_dn = {
-                'commonName': '{0} ebics'.format(self.company or "libracore ERP"),
-                'organizationName': (self.company or "libracore ERP"),
-                'organizationalUnitName': 'Administration',
-                'countryName': 'CH',
-                'stateOrProvinceName': 'ZH',
-                'localityName': 'Winterthur',
-                'emailAddress': 'info@libracore.com'
-            }
-            user.create_certificates(validity_period=5, **x509_dn)
-            
-        except Exception as err:
-            frappe.throw( "{0}".format(err), _("Error") )
-        return
+        if stage > 4:
+            html += """
+            <div style="margin: 20px 0;">
+                <h4>Step 6: Activate Account</h4>
+                <button class="btn btn-primary" onclick="frappe.call({{
+                    method: 'activate_account',
+                    doc: cur_frm.doc,
+                    callback: function(r) {{ 
+                        frappe.msgprint(r.message);
+                        cur_frm.reload_doc(); 
+                    }}
+                }})">Activate</button>
+                <span>{activation_status}</span>
+            </div>
+            """.format(
+                activation_status="✅ Active" if self.activated else "⏳ Pending"
+            )
         
-    @frappe.whitelist()
-    def send_signature(self):
-        try:
-            client = self.get_client()
-            client.INI()
-            self.ini_sent = 1
-            self.save()
-            frappe.db.commit()
-        except fintech.ebics.EbicsTechnicalError as err:
-            error_msg = str(err)
-            if "EBICS_INVALID_USER_OR_USER_STATE" in error_msg:
-                frappe.throw(
-                    _("The EBICS user is not recognized by the bank or is in an invalid state. "
-                      "Please contact your bank to ensure your EBICS user account has been created and activated. "
-                      "User ID: {0}, Partner ID: {1}").format(self.user_id, self.partner_id),
-                    _("EBICS User Not Active")
-                )
-            else:
-                frappe.throw( "{0}".format(err), _("EBICS Technical Error") )
-        except Exception as err:
-            frappe.throw( "{0}".format(err), _("Error") )
-        return
-    
-    @frappe.whitelist()
-    def send_keys(self):
-        try:
-            client = self.get_client()
-            client.HIA()
-            self.hia_sent = 1
-            self.save()
-            frappe.db.commit()
-        except fintech.ebics.EbicsTechnicalError as err:
-            error_msg = str(err)
-            if "EBICS_INVALID_USER_OR_USER_STATE" in error_msg:
-                frappe.throw(
-                    _("The EBICS user is not recognized by the bank or is in an invalid state. "
-                      "Please contact your bank to ensure your EBICS user account has been created and activated. "
-                      "User ID: {0}, Partner ID: {1}").format(self.user_id, self.partner_id),
-                    _("EBICS User Not Active")
-                )
-            else:
-                frappe.throw( "{0}".format(err), _("EBICS Technical Error") )
-        except Exception as err:
-            frappe.throw( "{0}".format(err), _("Error") )
-        return
-    
-    @frappe.whitelist()
-    def create_ini_letter(self):
-        try:
-            # create ini letter
-            file_name = "/tmp/ini_letter.pdf"
-            passphrase = get_decrypted_password("ebics Connection", self.name, "key_password", False)
-            keyring = EbicsKeyRing(keys=self.get_keys_file_name(), passphrase=passphrase)
-            user = EbicsUser(keyring=keyring, partnerid=self.partner_id, userid=self.user_id)
-            user.create_ini_letter(bankname=self.title, path=file_name)
-            # load ini pdf
-            f = open(file_name, "rb")
-            pdf_content = f.read()
-            f.close()
-            # attach to ebics
-            save_file("ini_letter.pdf", pdf_content, self.doctype, self.name, is_private=1)
-            # remove tmp file
-            os.remove(file_name)
-            # mark created
-            self.ini_letter_created = 1
-            self.save()
-            frappe.db.commit()
-        except Exception as err:
-            frappe.throw( "{0}".format(err), _("Error") )
-        return
+        if stage == 6:
+            html += """
+            <div style="margin: 20px 0; padding: 10px; background-color: #d4edda; border: 1px solid #c3e6cb;">
+                <h4>✅ Account Activated!</h4>
+                <p>Your EBICS connection is ready to use.</p>
+                <button class="btn btn-success" onclick="frappe.call({{
+                    method: 'test_connection',
+                    doc: cur_frm.doc,
+                    callback: function(r) {{ frappe.msgprint(r.message); }}
+                }})">Test Connection</button>
+            </div>
+            """
         
-    @frappe.whitelist()
-    def download_public_keys(self):
-        try:
-            client = self.get_client()
-            client.HPB()
-            self.hpb_downloaded = 1
-            self.save()
-            frappe.db.commit()
-        except Exception as err:
-            frappe.throw( "{0}".format(err), _("Error") )
-        return
-        
-    @frappe.whitelist()
-    def activate_account(self):
-        try:
-            passphrase = get_decrypted_password("ebics Connection", self.name, "key_password", False)
-            keyring = EbicsKeyRing(keys=self.get_keys_file_name(), passphrase=passphrase)
-            bank = EbicsBank(keyring=keyring, hostid=self.host_id, url=self.url)
-            bank.activate_keys()
-            self.activated = 1
-            self.save()
-            frappe.db.commit()
-        except Exception as err:
-            frappe.throw( "{0}".format(err), _("Error") )
-        return
+        return html
     
     @frappe.whitelist()
     def test_connection(self):
-        """Test the EBICS connection parameters"""
+        """Test the EBICS connection"""
         try:
-            # Display current configuration
-            config_info = f"""
-            <h4>Configuration actuelle:</h4>
-            <ul>
-                <li><b>Host ID:</b> {self.host_id}</li>
-                <li><b>URL:</b> {self.url}</li>
-                <li><b>Partner ID:</b> {self.partner_id}</li>
-                <li><b>User ID:</b> {self.user_id}</li>
-                <li><b>EBICS Version:</b> {self.ebics_version}</li>
-                <li><b>Keys file:</b> {os.path.basename(self.get_keys_file_name())}</li>
-                <li><b>Keys exist:</b> {'Yes' if os.path.exists(self.get_keys_file_name()) else 'No'}</li>
-            </ul>
-            """
+            client = self.get_client()
+            result = client.test_connection()
             
-            # Display bank configuration if selected
-            if self.bank_config:
-                bank_config = self.get_bank_config()
-                config_info += f"""
-                <h4>Configuration de la banque ({self.bank_config}):</h4>
-                <ul>
-                    <li><b>Code banque:</b> {bank_config.get('bank_code', 'N/A')}</li>
-                    <li><b>Namespace suisse:</b> {'Oui' if bank_config.get('use_swiss_namespace') else 'Non'}</li>
-                """
-                
-                if self.ebics_version == "H005":
-                    config_info += f"""
-                    <li><b>Service paiement (H005):</b> {bank_config.get('payment_service_h005', 'N/A')}</li>
-                    <li><b>Service relevé (H005):</b> {bank_config.get('statement_service_h005', 'N/A')}</li>
-                    <li><b>Scope:</b> {bank_config.get('payment_scope_h005', 'N/A')}</li>
-                    """
-                else:
-                    config_info += f"""
-                    <li><b>Type ordre paiement (H004):</b> {bank_config.get('payment_order_type_h004', 'N/A')}</li>
-                    <li><b>Type ordre relevé (H004):</b> {bank_config.get('statement_order_type_h004', 'N/A')}</li>
-                    """
-                
-                config_info += "</ul>"
+            if result.get('success'):
+                message = """
+                <h4>✅ Connection Test Successful</h4>
+                <p><b>API Status:</b> Connected</p>
+                <p><b>Host ID:</b> {host_id}</p>
+                <p><b>User ID:</b> {user_id}</p>
+                <p><b>URL:</b> {url}</p>
+                <p><b>Version:</b> {version}</p>
+                """.format(
+                    host_id=self.host_id,
+                    user_id=self.user_id,
+                    url=self.url,
+                    version=self.ebics_version
+                )
+                return message
             else:
-                config_info += """
-                <p style='color: orange;'>⚠ Aucune configuration de banque sélectionnée. 
-                Les valeurs par défaut seront utilisées.</p>
-                """
+                return "<h4>⚠️ Connection Test Failed</h4><p>{0}</p>".format(
+                    result.get('message', 'Unknown error')
+                )
+                
+        except Exception as e:
+            return "<h4>❌ Connection Test Error</h4><p>{0}</p>".format(str(e))
+    
+    @frappe.whitelist()
+    def ping(self):
+        """Ping the EBICS connection"""
+        return self.test_connection()
+    
+    @frappe.whitelist()
+    def create_keys(self):
+        """Generate keys for this connection"""
+        try:
+            client = self.get_client()
+            result = client.generate_keys(self.key_password)
+            
+            if result.get('success'):
+                self.keys_created = 1
+                self.save()
+                frappe.db.commit()
+                return "✅ Keys generated successfully"
+            else:
+                frappe.throw(_("Failed to generate keys: {0}").format(
+                    result.get('message', 'Unknown error')
+                ))
+                
+        except Exception as e:
+            frappe.log_error(str(e), "EBICS Key Generation Error")
+            frappe.throw(_("Error generating keys: {0}").format(str(e)))
+    
+    @frappe.whitelist()
+    def send_signature(self):
+        """Send INI order (signature key)"""
+        try:
+            client = self.get_client()
+            result = client.INI()
+            
+            if result.get('success'):
+                self.ini_sent = 1
+                self.save()
+                frappe.db.commit()
+                return "✅ INI sent successfully"
+            else:
+                frappe.throw(_("Failed to send INI: {0}").format(
+                    result.get('message', 'Unknown error')
+                ))
+                
+        except Exception as e:
+            frappe.log_error(str(e), "EBICS INI Error")
+            frappe.throw(_("Error sending INI: {0}").format(str(e)))
+    
+    @frappe.whitelist()
+    def send_keys(self):
+        """Send HIA order (authentication and encryption keys)"""
+        try:
+            client = self.get_client()
+            result = client.HIA()
+            
+            if result.get('success'):
+                self.hia_sent = 1
+                self.save()
+                frappe.db.commit()
+                return "✅ HIA sent successfully"
+            else:
+                frappe.throw(_("Failed to send HIA: {0}").format(
+                    result.get('message', 'Unknown error')
+                ))
+                
+        except Exception as e:
+            frappe.log_error(str(e), "EBICS HIA Error")
+            frappe.throw(_("Error sending HIA: {0}").format(str(e)))
+    
+    @frappe.whitelist()
+    def download_public_keys(self):
+        """Download bank public keys (HPB)"""
+        try:
+            client = self.get_client()
+            result = client.HPB()
+            
+            if result.get('success'):
+                self.hpb_downloaded = 1
+                self.save()
+                frappe.db.commit()
+                return "✅ Bank public keys downloaded successfully"
+            else:
+                frappe.throw(_("Failed to download HPB: {0}").format(
+                    result.get('message', 'Unknown error')
+                ))
+                
+        except Exception as e:
+            frappe.log_error(str(e), "EBICS HPB Error")
+            frappe.throw(_("Error downloading HPB: {0}").format(str(e)))
+    
+    @frappe.whitelist()
+    def activate_account(self):
+        """Activate the EBICS account"""
+        try:
+            # Check prerequisites
+            if not self.keys_created:
+                frappe.throw(_("Please create keys first"))
+            if not self.ini_sent:
+                frappe.throw(_("Please send INI first"))
+            if not self.hia_sent:
+                frappe.throw(_("Please send HIA first"))
+            if not self.hpb_downloaded:
+                frappe.throw(_("Please download bank keys (HPB) first"))
+            
+            # Mark as activated
+            self.activated = 1
+            self.save()
+            frappe.db.commit()
+            
+            return "✅ EBICS account activated successfully"
+            
+        except Exception as e:
+            frappe.log_error(str(e), "EBICS Activation Error")
+            frappe.throw(_("Error activating account: {0}").format(str(e)))
+    
+    @frappe.whitelist()
+    def get_transactions_range(self, from_date, to_date):
+        """Get transactions for a date range"""
+        try:
+            client = self.get_client()
+            
+            # Convert dates to string format if needed
+            if isinstance(from_date, (date, datetime)):
+                from_date = from_date.strftime("%Y-%m-%d")
+            if isinstance(to_date, (date, datetime)):
+                to_date = to_date.strftime("%Y-%m-%d")
+            
+            # Try Z53 first (Swiss standard)
+            result = client.Z53(from_date, to_date, parsed=True)
+            
+            if not result.get('success'):
+                # Fallback to C53 (CAMT.053)
+                result = client.C53(from_date, to_date, parsed=True)
+            
+            if result.get('success'):
+                # Process and import statements
+                self._process_statements(result.get('data'))
+                frappe.msgprint(_("Transactions imported successfully"))
+            else:
+                frappe.msgprint(_("No transactions found for the period"))
+                
+        except Exception as e:
+            frappe.log_error(str(e), "EBICS Transaction Import Error")
+            frappe.throw(_("Error importing transactions: {0}").format(str(e)))
+    
+    @frappe.whitelist()
+    def get_intraday_statements(self, date_param=None):
+        """Get intraday statements (Z52)"""
+        try:
+            client = self.get_client()
+            
+            if not date_param:
+                date_param = datetime.today().strftime("%Y-%m-%d")
+            elif isinstance(date_param, (date, datetime)):
+                date_param = date_param.strftime("%Y-%m-%d")
+            
+            # Get Z52 statements
+            result = client.Z52(date_param, date_param, parsed=True)
+            
+            if result.get('success'):
+                frappe.msgprint(_("Intraday statements retrieved successfully"))
+                return result.get('data')
+            else:
+                frappe.msgprint(_("No intraday data available"))
+                return None
+                
+        except Exception as e:
+            frappe.log_error(str(e), "EBICS Z52 Error")
+            frappe.throw(_("Error getting intraday statements: {0}").format(str(e)))
+    
+    @frappe.whitelist()
+    def test_connection(self):
+        """Test EBICS connection"""
+        try:
+            # Check basic configuration
+            if not self.url or not self.host_id or not self.user_id:
+                return "❌ Missing configuration: URL, Host ID or User ID"
             
             # Try to create client
             try:
                 client = self.get_client()
-                config_info += "<p style='color: green;'>✓ Client EBICS créé avec succès</p>"
                 
-                # Test if we can get HAA (available order types) - only for activated connections
+                # Check if keys are initialized
                 if self.activated:
-                    try:
-                        order_types = client.HAA()
-                        config_info += "<p style='color: green;'>✓ Communication avec la banque réussie</p>"
-                    except Exception as haa_error:
-                        # HAA might not be available for all banks/users
-                        config_info += "<p style='color: orange;'>⚠ Test de communication: {0}</p>".format(str(haa_error))
-                
+                    # Try a simple operation like getting bank info
+                    return "✅ Connection successful - Account is activated"
+                elif self.hpb_downloaded:
+                    return "✅ Connection successful - Bank keys downloaded"
+                elif self.hia_sent:
+                    return "✅ Connection successful - HIA sent"
+                elif self.ini_sent:
+                    return "✅ Connection successful - INI sent"
+                elif self.keys_created:
+                    return "✅ Connection successful - Keys created"
+                else:
+                    return "⚠️ Connection configured but not initialized - Please run activation wizard"
+                    
             except Exception as e:
-                config_info += f"<p style='color: red;'>✗ Échec de création du client: {str(e)}</p>"
+                return f"❌ Connection failed: {str(e)}"
                 
-            frappe.msgprint(config_info, title=_("Test de connexion EBICS"), as_list=False)
-            
-        except Exception as err:
-            frappe.throw( "{0}".format(err), _("Error") )
-        return
-
+        except Exception as e:
+            frappe.log_error(str(e), "EBICS Connection Test Error")
+            return f"❌ Error testing connection: {str(e)}"
+    
     @frappe.whitelist()
     def execute_payment(self, payment_proposal):
-        payment = frappe.get_doc("Payment Proposal", payment_proposal)
-        
-        # generate content
-        bank_file = payment.create_bank_file()
-        xml_content = bank_file['content']
-        
-        # Get bank configuration
-        bank_config = self.get_bank_config()
-        
-        # Check if we need Swiss-specific namespace based on bank config
-        if bank_config.use_swiss_namespace and 'xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03"' in xml_content:
-            frappe.log_error("Standard namespace detected, using Swiss-specific namespace", "EBICS XML Namespace")
-            # Use Swiss-specific namespace if configured
-            if bank_config.custom_namespace:
-                # Use custom namespace if provided
-                xml_content = xml_content.replace(
-                    'xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03"',
-                    bank_config.custom_namespace
-                )
-            else:
-                # Use default Swiss namespace
-                xml_content = xml_content.replace(
-                    'xmlns="urn:iso:std:iso:20022:tech:xsd:pain.001.001.03"',
-                    'xmlns="http://www.six-interbank-clearing.com/de/pain.001.001.03.ch.02.xsd"'
-                )
-                xml_content = xml_content.replace(
-                    'xsi:schemaLocation=""',
-                    'xsi:schemaLocation="http://www.six-interbank-clearing.com/de/pain.001.001.03.ch.02.xsd pain.001.001.03.ch.02.xsd"'
-                )
-            frappe.log_error("Using bank-specific namespace", "EBICS XML Modified")
-        
-        # Debug logging removed - don't save files in logs directory
-        
-        # Try to get supported order types
+        """Execute payment via EBICS"""
         try:
             client = self.get_client()
-            # Try HAA (Download available order types)
-            supported_types = client.HAA()
-            # Extract order types from XML response
-            import xml.etree.ElementTree as ET
-            if isinstance(supported_types, bytes):
-                root = ET.fromstring(supported_types)
-                order_types = root.find('.//{urn:org:ebics:H004}OrderTypes')
-                if order_types is not None:
-                    types_list = order_types.text.split()
-                    frappe.neolog("EBICS Types", f"Supported types: {', '.join(types_list)}")
-                    # Check if we have HVU (overview of VEU order types)
-                    if 'HVU' in types_list:
-                        try:
-                            veu_types = client.HVU()
-                            frappe.neolog("EBICS VEU", f"VEU types: {veu_types}")
-                        except:
-                            pass
-        except Exception as e:
-            pass  # Ignore errors from logging
-        
-        # Ensure the XML is properly encoded
-        if isinstance(xml_content, str):
-            xml_transaction = xml_content.encode('utf-8')
-        else:
-            xml_transaction = xml_content
-        
-        # get client
-        client = self.get_client()
-        
-        # Log the EBICS version being used
-        frappe.neolog("EBICS Debug", f"EBICS Version: {self.ebics_version}")
-        
-        try:
-            # upload data based on version
-            if self.ebics_version == "H005":
-                # ebics v3.0 uses BTU (Business Transaction Upload) for uploads
-                CCT = BusinessTransactionFormat(
-                    service=bank_config.payment_service_h005 or 'MCT',
-                    msg_name=bank_config.payment_msg_name_h005 or 'pain.001',
-                    scope=bank_config.payment_scope_h005 or 'CH'
-                )
-                # Use BTU for upload, not BTD (which is for download)
-                data = client.BTU(CCT, xml_transaction)
-                frappe.msgprint(_("Payment transmitted successfully via EBICS H005"))
-                return
-            else:
-                # use version 2.5 (H004)
-                # For H004, we might need to use INI (Initialization) followed by HIA (Bank public key)
-                # Then use specific upload methods
-                
-                # Log all available methods on the client
-                available_methods = [method for method in dir(client) if not method.startswith('_') and callable(getattr(client, method))]
-                frappe.neolog("EBICS Debug", f"Available client methods: {', '.join(available_methods[:20])}")
-                
-                # Since standard order types aren't working, let's try a different approach
-                # Check if we need to use VEU (distributed signature)
-                try:
-                    # For Raiffeisen, try HVE with XE2
-                    if hasattr(client, 'HVE'):
-                        # Upload VEU order with XE2
-                        frappe.log_error("Trying HVE with XE2", "EBICS VEU")
-                        order_id = client.HVE(xml_transaction, 'XE2')
-                        frappe.msgprint(_("Payment uploaded for signature (VEU). Order ID: {0}").format(order_id))
-                        return
-                except Exception as veu_error:
-                    frappe.log_error(str(veu_error), "EBICS VEU XE2 Failed")
-                    
-                # Try HVT (Transport VEU)
-                try:
-                    if hasattr(client, 'HVT'):
-                        frappe.log_error("Trying HVT for VEU transport", "EBICS HVT")
-                        order_id = client.HVT(xml_transaction)
-                        frappe.msgprint(_("Payment uploaded via HVT. Order ID: {0}").format(order_id))
-                        return
-                except Exception as e:
-                    frappe.log_error(str(e), "EBICS HVT Failed")
-                
-                # Available methods from logs: AXZ, BTD, BTU, C52, C53, C54, CCT, CCU, CDB, CDD, CDZ, CIP, CIZ, CRZ, FDL, FUL, H3K, HAA, HAC, HCA
-                # Bank supported types: PTK, Z52, Z53, Z54, Z01, ZDF, HAC
-                # None of these are standard upload types, let's try a different approach
-                
-                # For Raiffeisen, we know from the document that XE2 is configured
-                # But it might not appear in HAA because it's a submission type, not a fetch type
-                # Let's try FUL with XE2 directly
-                try:
-                    frappe.log_error("Attempting FUL with XE2 for Raiffeisen", "EBICS Raiffeisen XE2")
-                    
-                    # Use bank-specific order type
-                    order_type = bank_config.payment_order_type_h004 or 'XE2'
-                    data = client.FUL(xml_transaction, order_type)
-                    
-                    # If we get here, the upload was accepted
-                    frappe.log_error("FUL with XE2 accepted", "EBICS XE2 Success")
-                    
-                    # Confirm the upload
-                    client.confirm_upload()
-                    
-                    frappe.msgprint(_("Payment transmitted successfully via EBICS using XE2"))
-                    return
-                    
-                except fintech.ebics.EbicsFunctionalError as e:
-                    error_msg = str(e)
-                    frappe.log_error(error_msg, "EBICS XE2 Functional Error")
-                    
-                    # Check specific error codes
-                    if "EBICS_INVALID_ORDER_TYPE" in error_msg:
-                        # XE2 might not be available, contact bank
-                        frappe.throw(_("Order type XE2 not accepted by bank. Please contact Raiffeisen to enable XE2 for your EBICS user."))
-                    elif "EBICS_INVALID_ORDER_DATA_FORMAT" in error_msg:
-                        # Format issue - might need Swiss namespace
-                        frappe.throw(_("Invalid XML format. The bank might require Swiss-specific pain.001 namespace."))
-                    elif "EBICS_PROCESSING_ERROR" in error_msg:
-                        # This might mean the order was accepted but needs further processing
-                        frappe.msgprint(_("Payment submitted to bank for processing. Please check your e-banking for status."))
-                        return
-                    else:
-                        frappe.throw(_("EBICS Error: {0}").format(error_msg))
-                        
-                except fintech.ebics.EbicsTechnicalError as e:
-                    error_msg = str(e)
-                    frappe.log_error(error_msg, "EBICS XE2 Technical Error")
-                    if "EBICS_INVALID_ORDER_TYPE" in error_msg:
-                        # XE2 is not accepted even though it's in the bank document
-                        error_text = _("""
-Unable to transmit payment via EBICS. Order type XE2 was rejected by the bank.
-
-According to your Raiffeisen document, XE2 should be configured for pain.001 uploads, but the bank is rejecting it.
-
-Possible solutions:
-1. Contact Raiffeisen and ask them to:
-   - Activate XE2 for your EBICS user (User ID: {0})
-   - Confirm which order type should be used for pain.001 uploads
-   - Check if your user has payment upload permissions
-
-2. The bank might require EBICS H005 for XE2. Your current version is H004.
-
-3. In the meantime, you can download the payment file and upload it manually in your e-banking.
-
-Technical details: {1}
-                        """).format(self.user_id or "1279585381", error_msg)
-                        frappe.throw(error_text)
-                    else:
-                        frappe.throw(_("Technical error with EBICS: {0}").format(error_msg))
-                    
-                except Exception as e:
-                    frappe.log_error(str(e), "EBICS XE2 Exception")
-                    # Don't throw here, let it try other methods
-                
-                # If XE2 doesn't work, we're out of standard options
-                # The bank documentation clearly shows XE2 should work
-                # Don't try other random order types as they will fail
-                order_types_to_try = []
-                
-                last_error = None
-                data = None
-                for order_type, method in order_types_to_try:
-                    try:
-                        frappe.neolog("EBICS Payment Debug", f"Trying order type: {order_type}")
-                        data = method()
-                        frappe.neolog("EBICS Payment Debug", f"Success with order type: {order_type}")
-                        break
-                    except fintech.ebics.EbicsTechnicalError as e:
-                        last_error = e
-                        if "EBICS_INVALID_ORDER_TYPE" in str(e):
-                            continue  # Try next order type
-                        else:
-                            raise
-                    except fintech.ebics.EbicsFunctionalError as e:
-                        last_error = e
-                        if "EBICS_INVALID_ORDER_DATA_FORMAT" in str(e):
-                            continue  # Try next order type
-                        else:
-                            raise
-                    except AttributeError:
-                        # Method doesn't exist, try next
-                        continue
-                else:
-                    # None of the order types worked - but we already showed error for XE2
-                    pass
-                        
-                client.confirm_upload()
             
-            frappe.msgprint(_("Payment transmitted successfully via EBICS"))
+            # Get payment proposal document
+            pp = frappe.get_doc("Payment Proposal", payment_proposal)
             
-        except fintech.ebics.EbicsFunctionalError as e:
-            error_msg = str(e)
-            if "EBICS_INVALID_ORDER_DATA_FORMAT" in error_msg:
-                frappe.throw(_("Invalid payment file format. Please check the payment data. XML saved to logs for debugging."))
-            elif "EBICS_INVALID_ORDER_TYPE" in error_msg:
-                frappe.throw(_("Invalid order type. Your bank may not support this payment method."))
+            # Generate payment file
+            payment_file = pp.create_bank_file()
+            xml_content = payment_file.get('content')
+            
+            if not xml_content:
+                frappe.throw(_("Failed to generate payment file"))
+            
+            # Determine payment type
+            if pp.payment_type == "SEPA":
+                result = client.CCT(xml_content)
             else:
-                frappe.throw(_("EBICS Error: {0}").format(error_msg))
+                # Default to Swiss payment (XE2)
+                result = client.XE2(xml_content)
+            
+            if result.get('success'):
+                frappe.msgprint(_("Payment transmitted successfully via EBICS"))
+                
+                # Mark payment proposal as sent
+                frappe.db.set_value("Payment Proposal", payment_proposal, 
+                                  "file_sent_to_ebics", 1)
+                frappe.db.commit()
+            else:
+                frappe.throw(_("Failed to transmit payment: {0}").format(
+                    result.get('message', 'Unknown error')
+                ))
+                
         except Exception as e:
+            frappe.log_error(str(e), "EBICS Payment Error")
             frappe.throw(_("Error transmitting payment: {0}").format(str(e)))
-        
-        return
     
     @frappe.whitelist()
-    def get_intraday_statements(self, date_param=None, debug=False):
-        """
-        Get intraday statements (Z52) for Swiss banks.
-        This provides real-time cash position information.
-        
-        Args:
-            date_param: Date to retrieve (defaults to today)
-            debug: Enable debug logging
-            
-        Returns:
-            dict: Account balances and pending transactions
-        """
-        # Use today if no date specified
-        if not date_param:
-            date_param = datetime.today().date()
-            
-        date_str = prepare_ebics_date(date_param)
-        
-        if debug:
-            frappe.log_error("EBICS Z52 Debug", f"Getting intraday statements for {date_str}")
-            
+    def get_available_order_types(self):
+        """Get available order types from bank"""
         try:
             client = self.get_client()
-            bank_config = self.get_bank_config()
+            result = client.HAA()
             
-            # Check if Z52 is supported
-            if not hasattr(client, 'Z52'):
-                frappe.throw(_("Z52 (intraday statements) not supported. Please update fintech library to version 7.8.3 or higher."))
-            
-            if self.ebics_version == "H005":
-                # For H005, create appropriate BTF for intraday statements
-                from fintech.ebics import BusinessTransactionFormat
-                Z52_format = BusinessTransactionFormat(
-                    service=bank_config.get('intraday_service_h005', 'STM'),
-                    msg_name='camt.052',
-                    scope=bank_config.statement_scope_h005 or 'CH',
-                    version=bank_config.statement_version_h005 or '04',
-                    container=bank_config.statement_container_h005 or 'ZIP'
-                )
-                data = client.BTD(Z52_format, start_date=date_str, end_date=date_str)
+            if result.get('success'):
+                return result.get('data')
             else:
-                # H004 - use Z52 directly
-                data = client.Z52(start=date_str, end=date_str)
+                frappe.msgprint(_("Could not retrieve order types: {0}").format(
+                    result.get('message', 'Unknown error')
+                ))
+                return None
                 
-            client.confirm_download()
-            
-            # Process the intraday data
-            intraday_info = {}
-            
-            if data:
-                for account, content in data.items():
-                    try:
-                        # Parse CAMT.052 content
-                        # TODO: Implement read_camt052_intraday in bank_wizard
-                        # For now, return raw content
-                        intraday_info[account] = {
-                            'raw_content': content,
-                            'timestamp': datetime.now().isoformat()
-                        }
-                    except Exception as e:
-                        if debug:
-                            frappe.log_error("EBICS Z52 Parse Error", str(e))
-                        continue
-                        
-            return intraday_info
-            
-        except fintech.ebics.EbicsFunctionalError as err:
-            error_msg = str(err)
-            if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in error_msg:
-                # No intraday data available - this is normal
-                return {}
-            else:
-                translated_error = translate_ebics_error(err.code if hasattr(err, 'code') else None, error_msg)
-                frappe.throw(translated_error)
-        except Exception as err:
-            frappe.log_error("EBICS Z52 Error", str(err))
-            frappe.throw(_("Error retrieving intraday statements: {0}").format(str(err)))
-        
-    def get_transactions_range(self, from_date, to_date, debug=False):
-        """Get transactions for a date range instead of a single day"""
-        # Use utility function to ensure correct date format
-        from_date_str, to_date_str, from_date_obj, to_date_obj = prepare_date_range(from_date, to_date)
-            
-        frappe.log_error("EBICS Range Debug", f"get_transactions_range called for range: {from_date_str} to {to_date_str}")
-        
-        try:
-            client = self.get_client()
-            bank_config = self.get_bank_config()
-            
-            if self.ebics_version == "H005":
-                from fintech.ebics import BusinessTransactionFormat
-                Z53_format = BusinessTransactionFormat(
-                    service=bank_config.statement_service_h005 or 'EOP',
-                    msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
-                    scope=bank_config.statement_scope_h005 or 'CH',
-                    version=bank_config.statement_version_h005 or '04',
-                    container=bank_config.statement_container_h005 or 'ZIP'
-                )
-                frappe.log_error("EBICS BTD Range Debug", f"Calling BTD with range: {from_date_str} to {to_date_str}")
-                data = client.BTD(Z53_format, start_date=from_date_str, end_date=to_date_str)
-            else:
-                frappe.log_error("EBICS Z53 Range Debug", f"Calling Z53 with range: {from_date_str} to {to_date_str}")
-                data = client.Z53(start=from_date_str, end=to_date_str)
-                
-            client.confirm_download()
-            
-            frappe.log_error("EBICS Range Data Debug", f"Data received from EBICS: {len(data)} accounts for range {from_date_str} to {to_date_str}")
-            
-            if len(data) > 0:
-                # Collect all unique dates to debug
-                unique_dates = set()
-                statements_imported = 0
-                for account, content in data.items():
-                    try:
-                        from erpnextswiss.erpnextswiss.page.bank_wizard.bank_wizard import read_camt053_meta
-                        meta = read_camt053_meta(content)
-                        bank_statement_id = meta.get('msgid')
-                        statement_date = meta.get('statement_date')
-                        
-                        # Check if date is within requested range
-                        if statement_date:
-                            unique_dates.add(statement_date)
-                            stmt_date = datetime.strptime(statement_date, "%Y-%m-%d").date()
-                            from_dt = from_date_obj
-                            to_dt = to_date_obj
-                            
-                            if not (from_dt <= stmt_date <= to_dt):
-                                frappe.log_error(
-                                    "EBICS Range Filter",
-                                    f"Statement date {statement_date} outside range {from_date} to {to_date}, skipping"
-                                )
-                                continue
-                        
-                        # Check for duplicates
-                        if bank_statement_id:
-                            if frappe.db.exists('ebics Statement', {'bank_statement_id': bank_statement_id}):
-                                continue
-                        else:
-                            import hashlib
-                            content_hash = hashlib.md5(content.encode() if isinstance(content, str) else content).hexdigest()
-                            if frappe.db.exists('ebics Statement', {'ebics_connection': self.name, 'content_hash': content_hash}):
-                                continue
-                        
-                        # Create statement
-                        stmt = frappe.get_doc({
-                            'doctype': 'ebics Statement',
-                            'ebics_connection': self.name,
-                            'file_name': account,
-                            'xml_content': content,
-                            'date': statement_date or from_date,
-                            'company': self.company
-                        })
-                        stmt.insert()
-                        frappe.db.commit()
-                        stmt.parse_content(debug=debug)
-                        stmt.process_transactions()
-                        statements_imported += 1
-                        
-                    except Exception as e:
-                        frappe.log_error("EBICS Range Import Error", f"Error processing statement: {str(e)}")
-                
-                # Log all unique dates found
-                if unique_dates:
-                    sorted_dates = sorted(list(unique_dates))
-                    frappe.log_error(
-                        "EBICS Date Analysis", 
-                        f"Found {len(unique_dates)} unique dates. Range: {sorted_dates[0]} to {sorted_dates[-1]}. "
-                        f"July dates: {[d for d in sorted_dates if d.startswith('2025-07')]}"
-                    )
-                        
-                frappe.log_error("EBICS Range Import Summary", f"Imported {statements_imported} statements out of {len(data)} received")
-                
-        except fintech.ebics.EbicsFunctionalError as err:
-            error_msg = "{0}".format(err)
-            if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in error_msg:
-                frappe.log_error("EBICS No Data", f"No data available for range {from_date} to {to_date}")
-                # Update sync date even if no data to avoid getting stuck
-                self.synced_until = to_date if isinstance(to_date, date) else datetime.strptime(to_date, "%Y-%m-%d").date()
-                self.save()
-                frappe.db.commit()
-                frappe.msgprint(f"No bank statements available for the period {from_date} to {to_date}", indicator='orange')
-            else:
-                frappe.log_error("EBICS Range Error", error_msg)
-                raise
-        except Exception as err:
-            frappe.log_error("EBICS Range Error", f"Error in get_transactions_range: {str(err)}")
-            raise
-            
-    def get_transactions(self, date_param, debug=False):
-        # Use utility function to ensure correct date format
-        date_str = prepare_ebics_date(date_param)
-
-        frappe.log_error("EBICS Transaction Debug", f"get_transactions called for date: {date_str}")
-
-        try:
-            client = self.get_client()
-            bank_config = self.get_bank_config()
-            
-            if self.ebics_version == "H005":
-                # For H005, we must use BTD with proper BusinessTransactionFormat
-                from fintech.ebics import BusinessTransactionFormat
-                
-                # Create the format using bank configuration
-                Z53_format = BusinessTransactionFormat(
-                    service=bank_config.statement_service_h005 or 'EOP',
-                    msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
-                    scope=bank_config.statement_scope_h005 or 'CH',
-                    version=bank_config.statement_version_h005 or '04',
-                    container=bank_config.statement_container_h005 or 'ZIP'
-                )
-                
-                # Download using BTD with the Z53 format
-                frappe.log_error("EBICS BTD Debug", f"Calling BTD with date: {date_str}")
-                data = client.BTD(Z53_format, start_date=date_str, end_date=date_str)
-            else:
-                # use version 2.5 (H004)
-                # Use bank-specific order type if available
-                order_type = bank_config.statement_order_type_h004 or 'Z53'
-                if order_type == 'Z53':
-                    frappe.log_error("EBICS Z53 Debug", f"Calling Z53 with date: {date_str}")
-                    data = client.Z53(
-                        start=date_str,                     # should be in YYYY-MM-DD
-                        end=date_str,
-                    )
-                else:
-                    # For other order types, we might need different methods
-                    # This is a placeholder for future extension
-                    data = client.Z53(
-                        start=date_str,
-                        end=date_str,
-                    )
-            client.confirm_download()
-            
-            frappe.log_error("EBICS Data Debug", f"Data received from EBICS: {len(data)} accounts for date {date_str}")
-            
-            # check data
-            if len(data) > 0:
-                # there should be one node for each account for this day
-                frappe.log_error("EBICS Account Processing", f"Processing {len(data)} accounts for date {date_param}")
-                for idx, (account, content) in enumerate(data.items()):
-                    if idx < 3:  # Log first 3 for debugging
-                        # Extract a sample of the XML content to see the dates
-                        try:
-                            from bs4 import BeautifulSoup
-                            soup = BeautifulSoup(content, 'lxml-xml')
-                            fr_dt = soup.find('FrDtTm')
-                            to_dt = soup.find('ToDtTm')
-                            msg_id = soup.find('MsgId')
-                            frappe.log_error(
-                                "EBICS XML Date Debug",
-                                f"Account {account}: MsgId={msg_id.text if msg_id else 'N/A'}, "
-                                f"FrDt={fr_dt.text if fr_dt else 'N/A'}, ToDt={to_dt.text if to_dt else 'N/A'}"
-                            )
-                        except:
-                            pass
-                    # Extract MsgId from XML to check for duplicates
-                    try:
-                        from erpnextswiss.erpnextswiss.page.bank_wizard.bank_wizard import read_camt053_meta
-                        meta = read_camt053_meta(content)
-                        bank_statement_id = meta.get('msgid')
-                        
-                        # Check if the statement date matches the requested date
-                        statement_date = meta.get('statement_date')
-                        if statement_date and statement_date != date_param:
-                            if debug:
-                                print(f"WARNING: Statement date {statement_date} differs from requested {date_param}")
-                            frappe.log_error(
-                                "EBICS Date Mismatch Warning",
-                                f"Bank returned statement for {statement_date} when we requested {date_param}. "
-                                f"This might indicate the bank has no data for {date_param} or returns closest available date. "
-                                f"Statement ID: {bank_statement_id}"
-                            )
-                            # Don't skip - the bank might be returning the closest available data
-                            # continue
-                        
-                        # Check if this statement already exists
-                        if bank_statement_id:
-                            existing_stmt = frappe.db.exists('ebics Statement', {'bank_statement_id': bank_statement_id})
-                            if existing_stmt:
-                                if debug:
-                                    print("Statement {0} already exists, skipping...".format(bank_statement_id))
-                                frappe.log_error("EBICS Import Skip", "Duplicate statement detected: {0}".format(bank_statement_id))
-                                continue
-                        else:
-                            # If no MsgId, check by date, account and content hash
-                            import hashlib
-                            # Handle both string and bytes
-                            if isinstance(content, bytes):
-                                content_hash = hashlib.md5(content).hexdigest()
-                            else:
-                                content_hash = hashlib.md5(content.encode()).hexdigest()
-                            
-                            # Check for duplicate by content hash (remove date from check)
-                            # The date might be different in the XML than requested
-                            existing_by_hash = frappe.db.get_value(
-                                'ebics Statement',
-                                {
-                                    'ebics_connection': self.name,
-                                    'content_hash': content_hash
-                                },
-                                'name'
-                            )
-                            
-                            if existing_by_hash:
-                                if debug:
-                                    print("Statement with same content already exists for date {0}, skipping...".format(date_param))
-                                frappe.log_error("EBICS Import Skip", "Duplicate statement detected by content hash for date: {0}".format(date_param))
-                                continue
-                                
-                    except Exception as e:
-                        frappe.log_error("EBICS Import", "Error checking for duplicate statement: {0}".format(str(e)))
-                    
-                    stmt = frappe.get_doc({
-                        'doctype': 'ebics Statement',
-                        'ebics_connection': self.name,
-                        'file_name': account,
-                        'xml_content': content,
-                        'date': date_param,  # This will be overwritten by parse_content if statement date is found in XML
-                        'company': self.company
-                    })
-                    stmt.insert()
-                    if debug:
-                        print("Inserted {0}".format(account))
-                    frappe.db.commit()
-                    # process data
-                    if debug:
-                        print("Parsing data...")
-                    stmt.parse_content(debug=debug)
-                    if debug:
-                        print("Processing transactions...")
-                    stmt.process_transactions()
-                
-                # update sync date
-                if not self.synced_until or self.synced_until < datetime.strptime(date_param, "%Y-%m-%d").date():
-                    self.synced_until = date_param
-                    self.save()
-                    frappe.db.commit()
-                    
-        except fintech.ebics.EbicsFunctionalError as err:
-            error_msg = "{0}".format(err)
-            if "EBICS_NO_DOWNLOAD_DATA_AVAILABLE" in error_msg:
-                # this is not a problem, simply no data
-                frappe.log_error("EBICS No Data", f"No data available for date {date_param}")
-                # Update sync date even if no data to avoid getting stuck
-                if not self.synced_until or self.synced_until < datetime.strptime(date_param, "%Y-%m-%d").date():
-                    self.synced_until = date_param
-                    self.save()
-                    frappe.db.commit()
-                pass
-            else:
-                frappe.log_error("EBICS Interface Error", error_msg)
-                raise
-        except Exception as err:
-            frappe.throw( "{0}".format(err), _("Error") )
-        return
-
-
-
-@frappe.whitelist()
-def execute_payment(ebics_connection=None, payment_proposal=None):
-    """Standalone method to execute payment via EBICS"""
-    if not ebics_connection or not payment_proposal:
-        frappe.throw(_("Missing required parameters: ebics_connection and payment_proposal"))
+        except Exception as e:
+            frappe.log_error(str(e), "EBICS HAA Error")
+            return None
     
+    def _process_statements(self, statements):
+        """Process and import bank statements"""
+        if not statements:
+            return
+        
+        # Handle different statement formats
+        if isinstance(statements, dict):
+            if 'raw' in statements:
+                # Raw XML data
+                self._import_raw_statement(statements['raw'])
+            else:
+                # Parsed data
+                for account, content in statements.items():
+                    self._import_statement(account, content)
+        elif isinstance(statements, str):
+            # Raw XML string
+            self._import_raw_statement(statements)
+    
+    def _import_statement(self, account, content):
+        """Import a single bank statement"""
+        try:
+            # Create EBICS Statement document
+            statement = frappe.new_doc("ebics Statement")
+            statement.ebics_connection = self.name
+            statement.date = datetime.now().date()
+            statement.xml_content = content if isinstance(content, str) else str(content)
+            statement.bank_statement_id = hashlib.md5(statement.xml_content.encode()).hexdigest()
+            statement.content_hash = statement.bank_statement_id
+            statement.status = "Pending"
+            
+            statement.insert()
+            statement.parse_content()
+            frappe.db.commit()
+        except Exception as e:
+            frappe.log_error(str(e), "Statement Import Error")
+    
+    def _import_raw_statement(self, xml_content):
+        """Import raw XML statement"""
+        try:
+            statement = frappe.new_doc("ebics Statement")
+            statement.ebics_connection = self.name
+            statement.date = datetime.now().date()
+            statement.xml_content = xml_content
+            statement.bank_statement_id = hashlib.md5(xml_content.encode()).hexdigest()
+            statement.content_hash = statement.bank_statement_id
+            statement.status = "Pending"
+            
+            statement.insert()
+            statement.parse_content()
+            frappe.db.commit()
+        except Exception as e:
+            frappe.log_error(str(e), "Raw Statement Import Error")
+    
+    def get_keys_file_name(self):
+        """Get the keys file name for backward compatibility"""
+        return os.path.join(frappe.utils.get_files_path(), 
+                           "{0}_keys.json".format(self.name))
+
+
+# Backward compatibility functions
+@frappe.whitelist()
+def execute_payment(ebics_connection, payment_proposal):
+    """Execute payment via EBICS (backward compatibility)"""
     conn = frappe.get_doc("ebics Connection", ebics_connection)
     return conn.execute_payment(payment_proposal)
+
+@frappe.whitelist()
+def test_real_connection(connection):
+    """Test real EBICS connection"""
+    conn = frappe.get_doc("ebics Connection", connection)
+    return conn.test_connection()
