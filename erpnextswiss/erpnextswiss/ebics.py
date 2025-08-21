@@ -391,17 +391,18 @@ def preview_sync_range_detailed(connection_name, from_date, to_date, debug=False
         
         try:
             client = conn.get_client()
-            bank_config = conn.get_bank_config()
+            # Use default H005 settings
 
             # Make the EBICS call
-            if conn.ebics_version == "H005":
+            # Check for H005 or 3.0/2.5 (all map to H005)
+            if conn.ebics_version in ["H005", "3.0", "2.5"]:
                 from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
                 Z53_format = BusinessTransactionFormat(
-                    service=bank_config.statement_service_h005 or 'EOP',
-                    msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
-                    scope=bank_config.statement_scope_h005 or 'CH',
-                    version=bank_config.statement_version_h005 or '04',
-                    container=bank_config.statement_container_h005 or 'ZIP'
+                    service='EOP',
+                    msg_name='camt.053',
+                    scope='CH',
+                    version='04',
+                    container='ZIP'
                 )
                 data = client.BTD(Z53_format, start_date=from_date_str, end_date=to_date_str)
             else:
@@ -518,7 +519,6 @@ def diagnose_ebics_availability(connection_name, test_months=3):
         
         conn = frappe.get_doc("ebics Connection", connection_name)
         client = conn.get_client()
-        bank_config = conn.get_bank_config()
         
         results = {
             'connection': connection_name,
@@ -536,14 +536,14 @@ def diagnose_ebics_availability(connection_name, test_months=3):
         for months_ago in range(test_months):
             test_date = add_days(today, -30 * months_ago)
             try:
-                if conn.ebics_version == "H005":
+                if conn.ebics_version in ["H005", "3.0", "2.5"]:
                     from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
                     Z53_format = BusinessTransactionFormat(
-                        service=bank_config.statement_service_h005 or 'EOP',
-                        msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
-                        scope=bank_config.statement_scope_h005 or 'CH',
-                        version=bank_config.statement_version_h005 or '04',
-                        container=bank_config.statement_container_h005 or 'ZIP'
+                        service='EOP',
+                        msg_name='camt.053',
+                        scope='CH',
+                        version='04',
+                        container='ZIP'
                     )
                     data = client.BTD(Z53_format, start_date=prepare_ebics_date(test_date), end_date=prepare_ebics_date(test_date))
                 else:
@@ -585,14 +585,14 @@ def diagnose_ebics_availability(connection_name, test_months=3):
         for months_ahead in range(1, 4):
             test_date = add_days(today, 30 * months_ahead)
             try:
-                if conn.ebics_version == "H005":
+                if conn.ebics_version in ["H005", "3.0", "2.5"]:
                     from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
                     Z53_format = BusinessTransactionFormat(
-                        service=bank_config.statement_service_h005 or 'EOP',
-                        msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
-                        scope=bank_config.statement_scope_h005 or 'CH',
-                        version=bank_config.statement_version_h005 or '04',
-                        container=bank_config.statement_container_h005 or 'ZIP'
+                        service='EOP',
+                        msg_name='camt.053',
+                        scope='CH',
+                        version='04',
+                        container='ZIP'
                     )
                     data = client.BTD(Z53_format, start_date=prepare_ebics_date(test_date), end_date=prepare_ebics_date(test_date))
                 else:
@@ -631,14 +631,14 @@ def diagnose_ebics_availability(connection_name, test_months=3):
         # Test specifically July 2025
         july_2025 = datetime(2025, 7, 15).date()
         try:
-            if conn.ebics_version == "H005":
+            if conn.ebics_version in ["H005", "3.0", "2.5"]:
                 from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
                 Z53_format = BusinessTransactionFormat(
-                    service=bank_config.statement_service_h005 or 'EOP',
-                    msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
-                    scope=bank_config.statement_scope_h005 or 'CH',
-                    version=bank_config.statement_version_h005 or '04',
-                    container=bank_config.statement_container_h005 or 'ZIP'
+                    service='EOP',
+                    msg_name='camt.053',
+                    scope='CH',
+                    version='04',
+                    container='ZIP'
                 )
                 data = client.BTD(Z53_format, start_date=prepare_ebics_date(july_2025), end_date=prepare_ebics_date(july_2025))
             else:
@@ -675,18 +675,17 @@ def get_all_available_statements(connection_name, debug=False):
         
         conn = frappe.get_doc("ebics Connection", connection_name)
         client = conn.get_client()
-        bank_config = conn.get_bank_config()
 
         # Make EBICS call without specific dates - this gets all available
         try:
-            if conn.ebics_version == "H005":
+            if conn.ebics_version in ["H005", "3.0", "2.5"]:
                 from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
                 Z53_format = BusinessTransactionFormat(
-                    service=bank_config.statement_service_h005 or 'EOP',
-                    msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
-                    scope=bank_config.statement_scope_h005 or 'CH',
-                    version=bank_config.statement_version_h005 or '04',
-                    container=bank_config.statement_container_h005 or 'ZIP'
+                    service='EOP',
+                    msg_name='camt.053',
+                    scope='CH',
+                    version='04',
+                    container='ZIP'
                 )
                 # Call without date parameters to get all available
                 data = client.BTD(Z53_format)
@@ -781,17 +780,16 @@ def import_all_available(connection_name, debug=False):
         
         conn = frappe.get_doc("ebics Connection", connection_name)
         client = conn.get_client()
-        bank_config = conn.get_bank_config()
 
         # Get all available data
-        if conn.ebics_version == "H005":
+        if conn.ebics_version in ["H005", "3.0", "2.5"]:
             from erpnextswiss.erpnextswiss.ebics_api import BusinessTransactionFormat
             Z53_format = BusinessTransactionFormat(
-                service=bank_config.statement_service_h005 or 'EOP',
-                msg_name=bank_config.statement_msg_name_h005 or 'camt.053',
-                scope=bank_config.statement_scope_h005 or 'CH',
-                version=bank_config.statement_version_h005 or '04',
-                container=bank_config.statement_container_h005 or 'ZIP'
+                service='EOP',
+                msg_name='camt.053',
+                scope='CH',
+                version='04',
+                container='ZIP'
             )
             data = client.BTD(Z53_format)
         else:

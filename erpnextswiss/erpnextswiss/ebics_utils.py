@@ -370,5 +370,30 @@ def run_tests():
     
     print("✓ All tests passed!")
 
+@frappe.whitelist()
+def clear_ebics_logs():
+    """Clear all EBICS logs - only for System Manager"""
+    if "System Manager" not in frappe.get_roles():
+        frappe.throw(_("Insufficient permissions to clear logs"))
+    
+    try:
+        # Delete all ebics Log entries
+        frappe.db.sql("DELETE FROM `tabebics Log`")
+        frappe.db.commit()
+        
+        # Log this action in Error Log since we're clearing EBICS logs
+        frappe.log_error(
+            message="All EBICS logs cleared by {}".format(frappe.session.user),
+            title="EBICS Logs Cleared"
+        )
+        
+        return {"success": True, "message": _("All EBICS logs have been cleared")}
+    except Exception as e:
+        frappe.log_error(
+            message="Error clearing EBICS logs: {}".format(str(e)),
+            title="EBICS Log Clear Error"
+        )
+        frappe.throw(_("Error clearing logs: {}").format(str(e)))
+
 if __name__ == "__main__":
     run_tests()

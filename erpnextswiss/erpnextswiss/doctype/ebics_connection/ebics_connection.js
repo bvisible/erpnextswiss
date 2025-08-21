@@ -35,10 +35,6 @@ frappe.ui.form.on('ebics Connection', {
     },
     
     refresh: function(frm) {
-        // Auto-detect bank configuration when URL changes
-        if (!frm.doc.bank_config && frm.doc.url) {
-            frm.trigger('auto_detect_bank');
-        }
         if (!frm.doc.__islocal) {
             if (frm.doc.activated) {
                 cur_frm.dashboard.add_comment( __("This ebics connection is activated."), 'green', true);
@@ -530,33 +526,28 @@ frappe.ui.form.on('ebics Connection', {
     },
     
     url: function(frm) {
-        // Auto-detect bank when URL changes
-        if (!frm.doc.bank_config) {
-            frm.trigger('auto_detect_bank');
-        }
-    },
-    
-    auto_detect_bank: function(frm) {
-        // Auto-detect bank configuration based on URL
-        if (frm.doc.url) {
-            frappe.call({
-                'method': 'detect_bank_config',
-                'doc': frm.doc,
-                'callback': function(r) {
-                    if (r.message) {
-                        frm.set_value('bank_config', r.message);
-                        frappe.show_alert({
-                            message: __('Bank configuration auto-detected: {0}', [r.message]),
-                            indicator: 'green'
-                        });
-                    }
-                }
-            });
-        }
+        // URL field changed - no action needed since bank_config is removed
     }
 });
 
 function activation_wizard(frm) {
+    // Save current document if dirty
+    if (frm.is_dirty()) {
+        frm.save().then(() => {
+            open_activation_wizard_page(frm);
+        });
+    } else {
+        open_activation_wizard_page(frm);
+    }
+}
+
+function open_activation_wizard_page(frm) {
+    // Redirect to the new EBICS Activation Wizard page with the current connection
+    frappe.set_route("ebics-activation-wizard", {"connection": frm.doc.name});
+}
+
+function activation_wizard_old(frm) {
+    // Keep old function for backward compatibility
     frappe.call({
         'method': 'get_activation_wizard',
         'doc': frm.doc,

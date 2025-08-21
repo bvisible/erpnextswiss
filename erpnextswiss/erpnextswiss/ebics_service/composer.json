@@ -1,0 +1,70 @@
+{
+  "name": "ebics-api/ebics-client-php",
+  "type": "library",
+  "description": "PHP library to communicate with bank through EBICS protocol.",
+  "keywords": [
+    "ebics",
+    "PHP",
+    "client",
+    "openssl",
+    "rsa",
+    "x509",
+    "cfonb.120",
+    "cfonb.240",
+    "mt940",
+    "mt942"
+  ],
+  "authors": [
+    {
+      "name": "Andrew Svirin"
+    }
+  ],
+  "license": "MIT",
+  "require": {
+    "php": "^8.1",
+    "ext-bcmath": "*",
+    "ext-curl": "*",
+    "ext-dom": "*",
+    "ext-json": "*",
+    "ext-openssl": "*",
+    "ext-zip": "*",
+    "ext-zlib": "*",
+    "ext-libxml": "*"
+  },
+  "require-dev": {
+    "ebics-api/cfonb-php": "^1.0",
+    "ebics-api/mt942-php": "^1.0",
+    "phpseclib/phpseclib": "~2.0.48",
+    "phpstan/phpstan": "~1.9.18",
+    "phpunit/phpunit": "~9.6.24",
+    "psr/http-client": "^1.0",
+    "psr/http-factory": "^1.0",
+    "setasign/fpdf": "^1.8",
+    "squizlabs/php_codesniffer": "~3.7.2"
+  },
+  "autoload": {
+    "psr-4": {
+      "EbicsApi\\Ebics\\": "src"
+    }
+  },
+  "autoload-dev": {
+    "psr-4": {
+      "EbicsApi\\Ebics\\Tests\\": "tests"
+    }
+  },
+  "suggest": {
+    "ebics-api/cfonb-php": "If you need to parse format CFONB from FDL requests.",
+    "ebics-api/mt942-php": "If you need to parse format MT942 from VMK, STA requests.",
+    "setasign/fpdf": "If you need to generate PDF file letter for Bank."
+  },
+  "config": {
+    "sort-packages": true
+  },
+  "minimum-stability": "dev",
+  "prefer-stable": true,
+  "scripts": {
+    "code-test": "vendor/bin/phpunit",
+    "code-style": "vendor/bin/phpcs",
+    "code-analyse": "vendor/bin/phpstan"
+  }
+}

@@ -1,0 +1,62 @@
+{
+    "bank_mappings": {
+        "credit-suisse.com": {
+            "H005": {
+                "version": "VERSION_25",
+                "signature_version": "A005",
+                "use_certificates": false,
+                "comment": "Credit Suisse H005 uses EBICS 2.5"
+            }
+        },
+        "ubs.com": {
+            "H005": {
+                "version": "VERSION_30",
+                "signature_version": "A006",
+                "use_certificates": true,
+                "comment": "UBS H005 uses EBICS 3.0"
+            }
+        },
+        "raiffeisen.ch": {
+            "H005": {
+                "version": "VERSION_25",
+                "signature_version": "A005",
+                "use_certificates": false,
+                "comment": "Raiffeisen H005 uses EBICS 2.5"
+            }
+        },
+        "postfinance.ch": {
+            "H005": {
+                "version": "VERSION_25",
+                "signature_version": "A005",
+                "use_certificates": false,
+                "comment": "PostFinance H005 uses EBICS 2.5"
+            }
+        },
+        "zkb.ch": {
+            "H005": {
+                "version": "VERSION_25",
+                "signature_version": "A005",
+                "use_certificates": false,
+                "comment": "ZKB H005 uses EBICS 2.5"
+            }
+        }
+    },
+    "default_mappings": {
+        "H004": {
+            "version": "VERSION_24",
+            "signature_version": "A005",
+            "use_certificates": false
+        },
+        "H005": {
+            "version": "VERSION_25",
+            "signature_version": "A005",
+            "use_certificates": false,
+            "comment": "Default to EBICS 2.5 for H005 as it's more common"
+        },
+        "H006": {
+            "version": "VERSION_30",
+            "signature_version": "A006",
+            "use_certificates": true
+        }
+    }
+}

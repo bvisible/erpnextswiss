@@ -1,0 +1,27 @@
+{
+    "content": null,
+    "creation": "2025-08-20 10:00:00.000000",
+    "docstatus": 0,
+    "doctype": "Page",
+    "icon": "fa fa-bank",
+    "idx": 0,
+    "modified": "2025-08-20 10:00:00.000000",
+    "modified_by": "Administrator",
+    "module": "Erpnextswiss",
+    "name": "ebics-control-panel",
+    "owner": "Administrator",
+    "page_name": "EBICS Control Panel",
+    "roles": [
+        {
+            "role": "System Manager"
+        },
+        {
+            "role": "Accounts Manager"
+        }
+    ],
+    "script": null,
+    "standard": "Yes",
+    "style": null,
+    "system_page": 0,
+    "title": "EBICS Control Panel"
+}

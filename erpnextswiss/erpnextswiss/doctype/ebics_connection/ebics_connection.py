@@ -75,11 +75,40 @@ def get_available_order_types(connection_name):
 
 class ebicsConnection(Document):
     
+    def validate(self):
+        """Validate EBICS connection settings"""
+        # Map new version format to old format for backward compatibility
+        if self.ebics_version:
+            version_map = {
+                "3.0": "H005",  # EBICS 3.0 maps to H005
+                "2.5": "H004",  # EBICS 2.5 maps to H004 (CORRECTION!)
+                "2.4": "H004",  # EBICS 2.4 maps to H004
+                "H004": "H004",  # Keep old format (EBICS 2.4/2.5)
+                "H005": "H005"   # Keep old format (EBICS 3.0)
+            }
+            
+            # If it's a new format, keep it but validate it exists in map
+            if self.ebics_version not in version_map:
+                frappe.throw(_("Invalid EBICS version: {0}. Supported versions are: 3.0, 2.5, 2.4, H004, H005").format(self.ebics_version))
+    
     def before_save(self):
         # make sure synced_until is in date format
         if self.synced_until and not isinstance(self.synced_until, date):
             if isinstance(self.synced_until, str):
-                self.synced_until = datetime.strptime(self.synced_until, "%Y-%m-%d").date()
+                # Extract just the date part if there's a time component
+                if ' ' in self.synced_until:
+                    # Has time component, just take the date part
+                    date_part = self.synced_until.split(' ')[0]
+                    try:
+                        self.synced_until = datetime.strptime(date_part, "%Y-%m-%d").date()
+                    except ValueError:
+                        frappe.throw(_("Invalid date format for synced_until: {0}").format(self.synced_until))
+                else:
+                    # Just date, parse directly
+                    try:
+                        self.synced_until = datetime.strptime(self.synced_until, "%Y-%m-%d").date()
+                    except ValueError:
+                        frappe.throw(_("Invalid date format for synced_until: {0}").format(self.synced_until))
             elif isinstance(self.synced_until, datetime):
                 self.synced_until = self.synced_until.date()
         
@@ -87,38 +116,22 @@ class ebicsConnection(Document):
         if self.url:
             self.url = self.url.strip()
         
-        # Auto-detect bank config if not set
-        if not self.bank_config and self.url:
-            detected_config = self.detect_bank_config()
-            if detected_config:
-                self.bank_config = detected_config
-        
         return
+    
+    def get_ebics_version_code(self):
+        """Get EBICS version code for API calls"""
+        version_map = {
+            "3.0": "H005",
+            "2.5": "H005", 
+            "2.4": "H004",
+            "H004": "H004",
+            "H005": "H005"
+        }
+        return version_map.get(self.ebics_version, "H005")
     
     def get_client(self):
         """Get EBICS client using new API wrapper"""
         return EbicsApi(self)
-    
-    def detect_bank_config(self):
-        """Detect bank configuration from URL"""
-        url_lower = self.url.lower()
-        
-        bank_configs = {
-            'raiffeisen': 'Raiffeisen',
-            'ubs': 'UBS',
-            'credit-suisse': 'Credit Suisse',
-            'cs.ch': 'Credit Suisse',
-            'postfinance': 'PostFinance',
-            'zkb': 'ZKB',
-            'bcv': 'BCV',
-            'bcge': 'BCGE'
-        }
-        
-        for key, bank in bank_configs.items():
-            if key in url_lower:
-                return bank
-        
-        return None
     
     @frappe.whitelist()
     def get_activation_wizard(self):
@@ -498,7 +511,7 @@ class ebicsConnection(Document):
                 return f"❌ Connection failed: {str(e)}"
                 
         except Exception as e:
-            frappe.log_error(str(e), "EBICS Connection Test Error")
+            frappe.log_error(str(e), "ebics Connection Test Error")
             return f"❌ Error testing connection: {str(e)}"
     
     @frappe.whitelist()
