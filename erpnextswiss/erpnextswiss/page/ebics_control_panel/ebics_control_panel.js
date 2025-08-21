@@ -801,6 +801,10 @@ class EBICSControlPanel {
 	init_developer_tools() {
 		const dev_area = this.content.find('.developer-tools-area');
 		
+		// Clear any existing content and event handlers to avoid duplicates
+		dev_area.off('click');
+		dev_area.empty();
+		
 		// Calculate default dates (today and 7 days ago)
 		const today = new Date();
 		const sevenDaysAgo = new Date();

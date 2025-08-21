@@ -777,6 +777,16 @@ class UnifiedEbicsService {
             // Get downloaded data
             $data = $result->getData();
             
+            // Check if data is empty (no transactions available)
+            if (empty($data)) {
+                return [
+                    'success' => true,
+                    'message' => 'No download data available',
+                    'data' => '',
+                    'format' => 'xml'
+                ];
+            }
+            
             return [
                 'success' => true,
                 'message' => 'Statements downloaded successfully',
