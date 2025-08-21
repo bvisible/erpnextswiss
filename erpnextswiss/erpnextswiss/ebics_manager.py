@@ -654,9 +654,18 @@ def reset_ebics_connection(connection: str) -> Dict[str, Any]:
         conn.synced_until = None
         conn.bank_confirmation_date = None
         
-        # Clear stored keys
-        conn.db_set('key_hashes', None, update_modified=False)
-        conn.db_set('bank_key_hashes', None, update_modified=False)
+        # Clear stored keys if the fields exist
+        try:
+            conn.db_set('key_hashes', None, update_modified=False)
+        except Exception:
+            # Field might not exist on new installations
+            pass
+        
+        try:
+            conn.db_set('bank_key_hashes', None, update_modified=False)
+        except Exception:
+            # Field might not exist on new installations
+            pass
         
         conn.save()
         

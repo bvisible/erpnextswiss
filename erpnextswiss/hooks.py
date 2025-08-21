@@ -157,7 +157,7 @@ doc_events = {
 scheduler_events = {
     "daily": [
         "erpnextswiss.erpnextswiss.doctype.inspection_equipment.inspection_equipment.check_calibration_status",
-        "erpnextswiss.erpnextswiss.ebics.sync"
+        # "erpnextswiss.erpnextswiss.ebics.sync"  # Temporarily disabled
     ],
     "hourly": [
         "erpnextswiss.erpnextswiss.edi.process_incoming"
