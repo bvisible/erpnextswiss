@@ -283,7 +283,11 @@ class EbicsManager:
             needs_save = True
             # Store key hashes if available
             if 'keys' in result:
-                self.connection.db_set('key_hashes', json.dumps(result['keys']), update_modified=False)
+                try:
+                    self.connection.db_set('key_hashes', json.dumps(result['keys']), update_modified=False)
+                except Exception:
+                    # Field might not exist on new installations
+                    pass
         
         elif action == 'INI':
             # For INI, even 091002 means the order was sent successfully
@@ -306,15 +310,25 @@ class EbicsManager:
             self.connection.hpb_downloaded = True
             needs_save = True
             if 'bank_keys' in result:
-                self.connection.db_set('bank_key_hashes', json.dumps(result['bank_keys']), update_modified=False)
+                try:
+                    self.connection.db_set('bank_key_hashes', json.dumps(result['bank_keys']), update_modified=False)
+                except Exception:
+                    # Field might not exist on new installations
+                    pass
             # Auto-activate if bank activation is confirmed
             if self.connection.bank_activation_confirmed:
                 self.connection.activated = True
         
         elif action in ['Z53', 'Z54', 'FDL']:
             # Use db_set for simple timestamp updates to avoid version conflicts
-            self.connection.db_set('synced_until', now(), update_modified=False)
-            needs_save = False  # Don't need full save for this
+            try:
+                self.connection.db_set('synced_until', now(), update_modified=False)
+            except Exception:
+                # Field might not exist, just update the object
+                self.connection.synced_until = now()
+                needs_save = True
+            else:
+                needs_save = False  # Don't need full save if db_set worked
         
         # HAA, HTD, PTK and other read-only operations don't need to save
         # Only save if state was actually changed
