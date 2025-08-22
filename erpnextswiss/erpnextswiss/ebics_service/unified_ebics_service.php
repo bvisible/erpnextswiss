@@ -418,35 +418,27 @@ class UnifiedEbicsService {
             $keyring = $clientData['keyring'];
             $keyringPath = $clientData['keyringPath'] ?? ($this->sitePath . '/private/files/ebics_keys/' . $connectionName . '/keyring.json');
             
-            // For Credit Suisse Test, make real request
-            if (strpos($params['bank_url'] ?? '', 'credit-suisse.com') !== false) {
-                try {
-                    // Send INI order - real EBICS request
-                    $order = new \EbicsApi\Ebics\Orders\INI();
-                    
-                    // INI uses executeStandardOrder (not executeInitializationOrder)
-                    $result = $client->executeStandardOrder($order);
-                    
-                    // Save keyring after successful INI
-                    // Don't save here - the keyring is already in the file
-                    // Just return success
-                    
-                    return [
-                        'success' => true,
-                        'message' => 'INI order sent successfully to Credit Suisse',
-                        'code' => '000000',
-                        'technical_code' => '000000'
-                    ];
-                } catch (EbicsResponseException $e) {
-                    // Handle EBICS response errors - pass action context
-                    return $this->handleEbicsException($e, 'INI');
-                }
-            } else {
-                // For other banks, simulate for now
+            // Send real EBICS request for all banks
+            try {
+                // Send INI order - real EBICS request
+                $order = new \EbicsApi\Ebics\Orders\INI();
+                
+                // INI uses executeStandardOrder (not executeInitializationOrder)
+                $result = $client->executeStandardOrder($order);
+                
+                // Save keyring after successful INI
+                // Don't save here - the keyring is already in the file
+                // Just return success
+                
                 return [
                     'success' => true,
-                    'message' => 'INI order processed (test mode)'
+                    'message' => 'INI order sent successfully',
+                    'code' => '000000',
+                    'technical_code' => '000000'
                 ];
+            } catch (EbicsResponseException $e) {
+                // Handle EBICS response errors - pass action context
+                return $this->handleEbicsException($e, 'INI');
             }
             
         } catch (Exception $e) {
@@ -467,35 +459,27 @@ class UnifiedEbicsService {
             $keyring = $clientData['keyring'];
             $keyringPath = $clientData['keyringPath'] ?? ($this->sitePath . '/private/files/ebics_keys/' . $connectionName . '/keyring.json');
             
-            // For Credit Suisse Test, make real request
-            if (strpos($params['bank_url'] ?? '', 'credit-suisse.com') !== false) {
-                try {
-                    // Send HIA order - real EBICS request
-                    $order = new \EbicsApi\Ebics\Orders\HIA();
-                    
-                    // HIA uses executeStandardOrder (not executeInitializationOrder)
-                    $result = $client->executeStandardOrder($order);
-                    
-                    // Save keyring after successful HIA
-                    // Don't save here - the keyring is already in the file
-                    // Just return success
-                    
-                    return [
-                        'success' => true,
-                        'message' => 'HIA order sent successfully to Credit Suisse',
-                        'code' => '000000',
-                        'technical_code' => '000000'
-                    ];
-                } catch (EbicsResponseException $e) {
-                    // Handle EBICS response errors - pass action context
-                    return $this->handleEbicsException($e, 'HIA');
-                }
-            } else {
-                // For other banks, simulate for now
+            // Send real EBICS request for all banks
+            try {
+                // Send HIA order - real EBICS request
+                $order = new \EbicsApi\Ebics\Orders\HIA();
+                
+                // HIA uses executeStandardOrder (not executeInitializationOrder)
+                $result = $client->executeStandardOrder($order);
+                
+                // Save keyring after successful HIA
+                // Don't save here - the keyring is already in the file
+                // Just return success
+                
                 return [
                     'success' => true,
-                    'message' => 'HIA order processed (test mode)'
+                    'message' => 'HIA order sent successfully',
+                    'code' => '000000',
+                    'technical_code' => '000000'
                 ];
+            } catch (EbicsResponseException $e) {
+                // Handle EBICS response errors - pass action context
+                return $this->handleEbicsException($e, 'HIA');
             }
             
         } catch (Exception $e) {
@@ -522,87 +506,73 @@ class UnifiedEbicsService {
             $client = $clientData['client'];
             $keyring = $clientData['keyring'];
             
-            // For Credit Suisse, make real HPB request
-            if (strpos($params['bank_url'] ?? '', 'credit-suisse.com') !== false) {
-                try {
-                    // Download HPB - real EBICS request
-                    $order = new \EbicsApi\Ebics\Orders\HPB();
-                    $result = $client->executeInitializationOrder($order);
+            // Send real EBICS request for all banks
+            try {
+                // Download HPB - real EBICS request
+                $order = new \EbicsApi\Ebics\Orders\HPB();
+                $result = $client->executeInitializationOrder($order);
+                
+                // For VERSION_30, we need to also save certificates
+                if ($keyring->getVersion() === \EbicsApi\Ebics\Models\Keyring::VERSION_30) {
+                    // Load existing keyring data to preserve USER certificates
+                    $keyringData = json_decode(file_get_contents($keyringPath), true);
                     
-                    // For VERSION_30, we need to also save certificates
-                    if ($keyring->getVersion() === \EbicsApi\Ebics\Models\Keyring::VERSION_30) {
-                        // Load existing keyring data to preserve USER certificates
-                        $keyringData = json_decode(file_get_contents($keyringPath), true);
-                        
-                        // Update BANK certificates from the downloaded keys
-                        $bankE = $keyring->getBankSignatureE();
-                        $bankX = $keyring->getBankSignatureX();
-                        
-                        if ($bankE && $bankE->getCertificateContent()) {
-                            // Clean up certificate - remove \r and ensure proper format
-                            $certE = str_replace("\r", "", $bankE->getCertificateContent());
-                            $keyringData['BANK']['E']['CERTIFICATE'] = $certE;
-                        }
-                        if ($bankX && $bankX->getCertificateContent()) {
-                            // Clean up certificate - remove \r and ensure proper format
-                            $certX = str_replace("\r", "", $bankX->getCertificateContent());
-                            $keyringData['BANK']['X']['CERTIFICATE'] = $certX;
-                        }
-                        
-                        // Also update public keys
-                        if ($bankE && $bankE->getPublicKey()) {
-                            $publicKeyE = $bankE->getPublicKey();
-                            if (is_object($publicKeyE)) {
-                                $keyringData['BANK']['E']['PUBLIC_KEY'] = base64_encode($publicKeyE->getKey());
-                            } else {
-                                $keyringData['BANK']['E']['PUBLIC_KEY'] = base64_encode($publicKeyE);
-                            }
-                        }
-                        if ($bankX && $bankX->getPublicKey()) {
-                            $publicKeyX = $bankX->getPublicKey();
-                            if (is_object($publicKeyX)) {
-                                $keyringData['BANK']['X']['PUBLIC_KEY'] = base64_encode($publicKeyX->getKey());
-                            } else {
-                                $keyringData['BANK']['X']['PUBLIC_KEY'] = base64_encode($publicKeyX);
-                            }
-                        }
-                        
-                        // Save updated keyring with certificates
-                        file_put_contents($keyringPath, json_encode($keyringData, JSON_PRETTY_PRINT));
-                    } else {
-                        // For older versions, save the keyring data to file
-                        // ArrayKeyringManager expects an array reference, not a file path
-                        $updatedKeyringData = [];
-                        $arrayKeyringManager = new \EbicsApi\Ebics\Services\ArrayKeyringManager();
-                        $arrayKeyringManager->saveKeyring($keyring, $updatedKeyringData);
-                        // Write the updated data to file
-                        file_put_contents($keyringPath, json_encode($updatedKeyringData, JSON_PRETTY_PRINT));
+                    // Update BANK certificates from the downloaded keys
+                    $bankE = $keyring->getBankSignatureE();
+                    $bankX = $keyring->getBankSignatureX();
+                    
+                    if ($bankE && $bankE->getCertificateContent()) {
+                        // Clean up certificate - remove \r and ensure proper format
+                        $certE = str_replace("\r", "", $bankE->getCertificateContent());
+                        $keyringData['BANK']['E']['CERTIFICATE'] = $certE;
+                    }
+                    if ($bankX && $bankX->getCertificateContent()) {
+                        // Clean up certificate - remove \r and ensure proper format
+                        $certX = str_replace("\r", "", $bankX->getCertificateContent());
+                        $keyringData['BANK']['X']['CERTIFICATE'] = $certX;
                     }
                     
-                    return [
-                        'success' => true,
-                        'message' => 'Bank keys downloaded successfully from Credit Suisse',
-                        'bank_keys' => [
-                            'auth' => $this->getKeyHash($keyring->getBankSignatureX()),
-                            'enc' => $this->getKeyHash($keyring->getBankSignatureE())
-                        ]
-                    ];
-                } catch (EbicsResponseException $e) {
-                    // Real EBICS error from bank - HPB context
-                    return $this->handleEbicsException($e, 'HPB');
+                    // Also update public keys
+                    if ($bankE && $bankE->getPublicKey()) {
+                        $publicKeyE = $bankE->getPublicKey();
+                        if (is_object($publicKeyE)) {
+                            $keyringData['BANK']['E']['PUBLIC_KEY'] = base64_encode($publicKeyE->getKey());
+                        } else {
+                            $keyringData['BANK']['E']['PUBLIC_KEY'] = base64_encode($publicKeyE);
+                        }
+                    }
+                    if ($bankX && $bankX->getPublicKey()) {
+                        $publicKeyX = $bankX->getPublicKey();
+                        if (is_object($publicKeyX)) {
+                            $keyringData['BANK']['X']['PUBLIC_KEY'] = base64_encode($publicKeyX->getKey());
+                        } else {
+                            $keyringData['BANK']['X']['PUBLIC_KEY'] = base64_encode($publicKeyX);
+                        }
+                    }
+                    
+                    // Save updated keyring with certificates
+                    file_put_contents($keyringPath, json_encode($keyringData, JSON_PRETTY_PRINT));
+                } else {
+                    // For older versions, save the keyring data to file
+                    // ArrayKeyringManager expects an array reference, not a file path
+                    $updatedKeyringData = [];
+                    $arrayKeyringManager = new \EbicsApi\Ebics\Services\ArrayKeyringManager();
+                    $arrayKeyringManager->saveKeyring($keyring, $updatedKeyringData);
+                    // Write the updated data to file
+                    file_put_contents($keyringPath, json_encode($updatedKeyringData, JSON_PRETTY_PRINT));
                 }
-            } else {
-                // For other banks, simulate authentication error
+                
                 return [
-                    'success' => false,
-                    'error' => 'EBICS_AUTHENTICATION_FAILED',
-                    'code' => '061001',
-                    'message' => 'The bank has not yet activated your EBICS access. Please ensure your INI letter has been processed.',
-                    'details' => [
-                        'return_code' => '061001',
-                        'report_text' => 'Subscriber state error: User not activated by bank (test mode)'
+                    'success' => true,
+                    'message' => 'Bank keys downloaded successfully',
+                    'bank_keys' => [
+                        'auth' => $this->getKeyHash($keyring->getBankSignatureX()),
+                        'enc' => $this->getKeyHash($keyring->getBankSignatureE())
                     ]
                 ];
+            } catch (EbicsResponseException $e) {
+                // Real EBICS error from bank - HPB context
+                return $this->handleEbicsException($e, 'HPB');
             }
             
         } catch (EbicsResponseException $e) {
